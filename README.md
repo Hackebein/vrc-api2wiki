@@ -62,3 +62,7 @@ docker run --rm \
   -e VRCWIKI_AUTHORIZATION_HEADER -e VRCWIKI_AUTHORIZATION_VALUE \
   vrc-api2wiki
 ```
+
+## License
+
+This project is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (AGPL-3.0-or-later).
