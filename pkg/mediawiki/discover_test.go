@@ -74,6 +74,22 @@ func TestParseInfoboxWorldIDsFromLinkParam(t *testing.T) {
 	}
 }
 
+func TestWorldAliasWikitextSingleTarget(t *testing.T) {
+	got := WorldAliasWikitext([]string{"Community:Prison Escape"})
+	want := "#REDIRECT [[Community:Prison Escape]]\n"
+	if got != want {
+		t.Fatalf("unexpected redirect wikitext:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestWorldAliasWikitextMultipleTargets(t *testing.T) {
+	got := WorldAliasWikitext([]string{"Community:Zeta", "Community:Alpha"})
+	want := "{{Disambiguation}}\n* [[Community:Alpha]]\n* [[Community:Zeta]]\n"
+	if got != want {
+		t.Fatalf("unexpected disambiguation wikitext:\n got: %q\nwant: %q", got, want)
+	}
+}
+
 func TestIsValidWorldID(t *testing.T) {
 	if !IsValidWorldID("wrld_b2d24c29-1ded-4990-a90d-dd6dcc440300") {
 		t.Fatal("expected valid world id")

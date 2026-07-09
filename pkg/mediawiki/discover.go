@@ -86,8 +86,23 @@ func ParseInfoboxWorldIDs(wikitext string) []string {
 	return ids
 }
 
-func (c *MediaWikiClient) listTemplateTransclusions(templateTitle string) ([]string, error) {
-	var titles []string
+// articleNamespaces are the wiki namespace ids whose pages count as
+// user-facing articles for alias/redirect targets: 0 (main) and 3000
+// (Community). Internal pages like Template:World/<id> markers live in other
+// namespaces and are excluded.
+var articleNamespaces = map[int]struct{}{
+	0:    {},
+	3000: {},
+}
+
+// PageRef is a wiki page title together with its namespace id.
+type PageRef struct {
+	Title string
+	NS    int
+}
+
+func (c *MediaWikiClient) listTemplateTransclusions(templateTitle string) ([]PageRef, error) {
+	var refs []PageRef
 	eicontinue := ""
 
 	for {
@@ -122,9 +137,14 @@ func (c *MediaWikiClient) listTemplateTransclusions(templateTitle string) ([]str
 				continue
 			}
 			title, _ := m["title"].(string)
-			if title != "" {
-				titles = append(titles, title)
+			if title == "" {
+				continue
 			}
+			ns := 0
+			if nsVal, ok := m["ns"].(float64); ok {
+				ns = int(nsVal)
+			}
+			refs = append(refs, PageRef{Title: title, NS: ns})
 		}
 
 		if cont, ok := result["continue"].(map[string]any); ok {
@@ -135,52 +155,66 @@ func (c *MediaWikiClient) listTemplateTransclusions(templateTitle string) ([]str
 		}
 		break
 	}
-	return titles, nil
+	return refs, nil
 }
 
-func (c *MediaWikiClient) ListInfoboxWorldPages() ([]string, error) {
-	var pages []string
+func (c *MediaWikiClient) ListInfoboxWorldPages() ([]PageRef, error) {
+	var pages []PageRef
 	seenPages := make(map[string]struct{})
 	for _, template := range worldInfoboxTemplates {
-		titles, err := c.listTemplateTransclusions(template)
+		refs, err := c.listTemplateTransclusions(template)
 		if err != nil {
 			return nil, fmt.Errorf("transclusions of %s: %w", template, err)
 		}
 		if c.logger != nil {
-			c.logger.Info("template transclusions found", "template", template, "count", len(titles))
+			c.logger.Info("template transclusions found", "template", template, "count", len(refs))
 		}
-		for _, title := range titles {
-			if _, ok := seenPages[title]; ok {
+		for _, ref := range refs {
+			if _, ok := seenPages[ref.Title]; ok {
 				continue
 			}
-			seenPages[title] = struct{}{}
-			pages = append(pages, title)
+			seenPages[ref.Title] = struct{}{}
+			pages = append(pages, ref)
 		}
 	}
 	return pages, nil
 }
 
+// WorldDiscovery is the result of scanning infobox transclusions: the
+// deduplicated world ids in discovery order, the infobox template name(s) each
+// id was found under, and the article page title(s) each id appears on
+// (only namespaces 0 and 3000; internal pages such as the Template:World/<id>
+// markers are excluded).
+type WorldDiscovery struct {
+	IDs          []string
+	Infoboxes    map[string][]string
+	ArticlePages map[string][]string
+}
+
 // DiscoverWorldRefs scans infobox transclusions and returns deduplicated world
 // ids in discovery order together with the infobox template name(s) each id
-// was found under (Infobox/World and/or Infobox/Official World).
-func (c *MediaWikiClient) DiscoverWorldRefs() ([]string, map[string][]string, error) {
+// was found under (Infobox/World and/or Infobox/Official World) and the
+// article page(s) each id was discovered on.
+func (c *MediaWikiClient) DiscoverWorldRefs() (WorldDiscovery, error) {
 	pages, err := c.ListInfoboxWorldPages()
 	if err != nil {
-		return nil, nil, err
+		return WorldDiscovery{}, err
 	}
 
 	seen := make(map[string]struct{})
 	var ids []string
 	infoboxes := make(map[string][]string)
+	articlePages := make(map[string][]string)
 
-	for _, pageTitle := range pages {
-		content, err := c.getPageContent(pageTitle)
+	for _, page := range pages {
+		content, err := c.getPageContent(page.Title)
 		if err != nil {
 			if c.logger != nil {
-				c.logger.Warn("skip page: could not read content", "page", pageTitle, "error", err)
+				c.logger.Warn("skip page: could not read content", "page", page.Title, "error", err)
 			}
 			continue
 		}
+		_, isArticle := articleNamespaces[page.NS]
 		for _, ref := range ParseInfoboxWorlds(content) {
 			if _, ok := seen[ref.ID]; !ok {
 				seen[ref.ID] = struct{}{}
@@ -189,9 +223,21 @@ func (c *MediaWikiClient) DiscoverWorldRefs() ([]string, map[string][]string, er
 			if !containsInfobox(infoboxes[ref.ID], ref.Infobox) {
 				infoboxes[ref.ID] = append(infoboxes[ref.ID], ref.Infobox)
 			}
+			if isArticle && !containsString(articlePages[ref.ID], page.Title) {
+				articlePages[ref.ID] = append(articlePages[ref.ID], page.Title)
+			}
 		}
 	}
-	return ids, infoboxes, nil
+	return WorldDiscovery{IDs: ids, Infoboxes: infoboxes, ArticlePages: articlePages}, nil
+}
+
+func containsString(list []string, value string) bool {
+	for _, item := range list {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }
 
 func containsInfobox(list []string, infobox string) bool {
@@ -204,8 +250,8 @@ func containsInfobox(list []string, infobox string) bool {
 }
 
 func (c *MediaWikiClient) DiscoverWorldIDs() ([]string, error) {
-	ids, _, err := c.DiscoverWorldRefs()
-	return ids, err
+	d, err := c.DiscoverWorldRefs()
+	return d.IDs, err
 }
 
 // EnsureWorldMarkerPage keeps Template:World/<id> in sync with the expected

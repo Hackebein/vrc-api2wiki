@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -149,16 +150,56 @@ func WorldMarkerWikitext(worldID string, infoboxes []string) string {
 	return b.String()
 }
 
+// WorldAliasPageTitle returns the Community-namespace alias page title for a
+// world id, e.g. "Community:wrld_...". Visiting it redirects to (or lists) the
+// article(s) that use the world's infobox.
+func WorldAliasPageTitle(worldID string) string {
+	return fmt.Sprintf("Community:%s", worldID)
+}
+
+// WorldAliasWikitext builds the content of a world-id alias page. A single
+// target becomes a redirect; multiple targets render a {{Disambiguation}} page
+// with a bullet list. Targets are sorted so repeated runs produce identical
+// content (keeping EditPage's change detection idempotent).
+func WorldAliasWikitext(targets []string) string {
+	sorted := append([]string(nil), targets...)
+	sort.Strings(sorted)
+	if len(sorted) == 1 {
+		return fmt.Sprintf("#REDIRECT [[%s]]\n", sorted[0])
+	}
+	var b strings.Builder
+	b.WriteString("{{Disambiguation}}\n")
+	for _, target := range sorted {
+		b.WriteString("* [[")
+		b.WriteString(target)
+		b.WriteString("]]\n")
+	}
+	return b.String()
+}
+
+// EnsureWorldAliasPage keeps Community:<id> in sync with the article(s) that
+// use the world's infobox; EditPage only writes when the content differs. It
+// is a no-op when no article targets are known.
+func (c *MediaWikiClient) EnsureWorldAliasPage(worldID string, targets []string) error {
+	if len(targets) == 0 {
+		return nil
+	}
+	return c.EditPage(WorldAliasPageTitle(worldID), WorldAliasWikitext(targets), true)
+}
+
 func RunSync(c *MediaWikiClient, api *vrchat.Client, logger *slog.Logger) error {
 	worldInfoboxes := make(map[string][]string)
+	worldArticlePages := make(map[string][]string)
 
 	worldIDs := WorldIDsFromEnv()
 	if len(worldIDs) == 0 {
-		var err error
-		worldIDs, worldInfoboxes, err = c.DiscoverWorldRefs()
+		d, err := c.DiscoverWorldRefs()
 		if err != nil {
 			return fmt.Errorf("discover world ids: %w", err)
 		}
+		worldIDs = d.IDs
+		worldInfoboxes = d.Infoboxes
+		worldArticlePages = d.ArticlePages
 	} else if logger != nil {
 		logger.Info("using world ids from VRC_API2WIKI_WORLD_IDS", "count", len(worldIDs))
 	}
@@ -179,6 +220,12 @@ func RunSync(c *MediaWikiClient, api *vrchat.Client, logger *slog.Logger) error 
 	for _, worldID := range worldIDs {
 		if err := c.EnsureWorldMarkerPage(worldID, worldInfoboxes[worldID]); err != nil {
 			return fmt.Errorf("ensure marker for %s: %w", worldID, err)
+		}
+	}
+
+	for _, worldID := range worldIDs {
+		if err := c.EnsureWorldAliasPage(worldID, worldArticlePages[worldID]); err != nil {
+			return fmt.Errorf("ensure alias for %s: %w", worldID, err)
 		}
 	}
 
