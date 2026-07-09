@@ -1,0 +1,37 @@
+name: sync
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vrc-api2wiki-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build -o /dev/null ./...
+
+      - name: Run sync
+        env:
+          VRCWIKI_API_URL: ${{ secrets.VRCWIKI_API_URL }}
+          VRCWIKI_USERNAME: ${{ secrets.VRCWIKI_USERNAME }}
+          VRCWIKI_PASSWORD: ${{ secrets.VRCWIKI_PASSWORD }}
+          VRCWIKI_AUTHORIZATION_HEADER: ${{ secrets.VRCWIKI_AUTHORIZATION_HEADER }}
+          VRCWIKI_AUTHORIZATION_VALUE: ${{ secrets.VRCWIKI_AUTHORIZATION_VALUE }}
+        run: go run ./cmd/vrc-api2wiki
