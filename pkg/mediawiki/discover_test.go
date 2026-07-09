@@ -75,7 +75,7 @@ func TestParseInfoboxWorldIDsFromLinkParam(t *testing.T) {
 }
 
 func TestWorldAliasWikitextSingleTarget(t *testing.T) {
-	got := WorldAliasWikitext([]string{"Community:Prison Escape"})
+	got := WorldAliasWikitext("wrld_00000000-0000-4000-8000-000000000001", []string{"Community:Prison Escape"})
 	want := "#REDIRECT [[Community:Prison Escape]]\n"
 	if got != want {
 		t.Fatalf("unexpected redirect wikitext:\n got: %q\nwant: %q", got, want)
@@ -83,8 +83,10 @@ func TestWorldAliasWikitextSingleTarget(t *testing.T) {
 }
 
 func TestWorldAliasWikitextMultipleTargets(t *testing.T) {
-	got := WorldAliasWikitext([]string{"Community:Zeta", "Community:Alpha"})
-	want := "{{Disambiguation}}\n* [[Community:Alpha]]\n* [[Community:Zeta]]\n"
+	id := "wrld_00000000-0000-4000-8000-000000000001"
+	got := WorldAliasWikitext(id, []string{"Community:Zeta", "Community:Alpha"})
+	want := "{{#ifexist:Template:World/" + id + "/name|{{DISPLAYTITLE:{{World/" + id + "/name}}}}}}\n" +
+		"{{Disambiguation}}\n* [[Community:Alpha]]\n* [[Community:Zeta]]\n"
 	if got != want {
 		t.Fatalf("unexpected disambiguation wikitext:\n got: %q\nwant: %q", got, want)
 	}

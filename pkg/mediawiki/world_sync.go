@@ -159,15 +159,18 @@ func WorldAliasPageTitle(worldID string) string {
 
 // WorldAliasWikitext builds the content of a world-id alias page. A single
 // target becomes a redirect; multiple targets render a {{Disambiguation}} page
-// with a bullet list. Targets are sorted so repeated runs produce identical
-// content (keeping EditPage's change detection idempotent).
-func WorldAliasWikitext(targets []string) string {
+// with a bullet list whose display title is taken from the world's name
+// subpage (Template:World/<id>/name). Targets are sorted so repeated runs
+// produce identical content (keeping EditPage's change detection idempotent).
+func WorldAliasWikitext(worldID string, targets []string) string {
 	sorted := append([]string(nil), targets...)
 	sort.Strings(sorted)
 	if len(sorted) == 1 {
 		return fmt.Sprintf("#REDIRECT [[%s]]\n", sorted[0])
 	}
+	nameSubpage := WorldPageTitle(worldID, "name")
 	var b strings.Builder
+	fmt.Fprintf(&b, "{{#ifexist:%s|{{DISPLAYTITLE:{{World/%s/name}}}}}}\n", nameSubpage, worldID)
 	b.WriteString("{{Disambiguation}}\n")
 	for _, target := range sorted {
 		b.WriteString("* [[")
@@ -184,7 +187,7 @@ func (c *MediaWikiClient) EnsureWorldAliasPage(worldID string, targets []string)
 	if len(targets) == 0 {
 		return nil
 	}
-	return c.EditPage(WorldAliasPageTitle(worldID), WorldAliasWikitext(targets), true)
+	return c.EditPage(WorldAliasPageTitle(worldID), WorldAliasWikitext(worldID, targets), true)
 }
 
 func RunSync(c *MediaWikiClient, api *vrchat.Client, logger *slog.Logger) error {
