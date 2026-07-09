@@ -27,7 +27,19 @@ var (
 	linkParamRe         = regexp.MustCompile(`(?i)\|\s*link\s*=[^\n]*`)
 	worldIDRe           = regexp.MustCompile(`^wrld_[0-9a-fA-F-]{36}$`)
 	worldIDAnywhereRe   = regexp.MustCompile(`wrld_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
+	// translationSuffixRe matches a trailing "/<lang>" segment that the
+	// Translate extension appends to translated subpages (e.g. ".../de",
+	// ".../zh-hans", ".../pt-br"). Stripping it yields the source page title.
+	translationSuffixRe = regexp.MustCompile(`/[a-z]{2,3}(-[a-z]{2,8})?$`)
 )
+
+// BaseArticleTitle strips a trailing Translate-extension language suffix from a
+// page title so that translated subpages collapse onto their source page
+// (e.g. "Community:Sketchu Spring/de" -> "Community:Sketchu Spring"). Titles
+// without a recognized language suffix are returned unchanged.
+func BaseArticleTitle(title string) string {
+	return translationSuffixRe.ReplaceAllString(title, "")
+}
 
 func IsValidWorldID(id string) bool {
 	return worldIDRe.MatchString(strings.TrimSpace(id))
@@ -223,8 +235,11 @@ func (c *MediaWikiClient) DiscoverWorldRefs() (WorldDiscovery, error) {
 			if !containsInfobox(infoboxes[ref.ID], ref.Infobox) {
 				infoboxes[ref.ID] = append(infoboxes[ref.ID], ref.Infobox)
 			}
-			if isArticle && !containsString(articlePages[ref.ID], page.Title) {
-				articlePages[ref.ID] = append(articlePages[ref.ID], page.Title)
+			if isArticle {
+				base := BaseArticleTitle(page.Title)
+				if !containsString(articlePages[ref.ID], base) {
+					articlePages[ref.ID] = append(articlePages[ref.ID], base)
+				}
 			}
 		}
 	}

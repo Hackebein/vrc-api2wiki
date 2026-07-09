@@ -76,7 +76,7 @@ func TestParseInfoboxWorldIDsFromLinkParam(t *testing.T) {
 
 func TestWorldAliasWikitextSingleTarget(t *testing.T) {
 	got := WorldAliasWikitext("wrld_00000000-0000-4000-8000-000000000001", []string{"Community:Prison Escape"})
-	want := "#REDIRECT [[Community:Prison Escape]]\n"
+	want := "#REDIRECT [[Special:MyLanguage/Community:Prison Escape]]\n"
 	if got != want {
 		t.Fatalf("unexpected redirect wikitext:\n got: %q\nwant: %q", got, want)
 	}
@@ -86,9 +86,24 @@ func TestWorldAliasWikitextMultipleTargets(t *testing.T) {
 	id := "wrld_00000000-0000-4000-8000-000000000001"
 	got := WorldAliasWikitext(id, []string{"Community:Zeta", "Community:Alpha"})
 	want := "{{#ifexist:Template:World/" + id + "/name|{{DISPLAYTITLE:{{World/" + id + "/name}}}}}}\n" +
-		"{{Disambiguation}}\n* [[Community:Alpha]]\n* [[Community:Zeta]]\n"
+		"{{Disambiguation}}\n* [[Special:MyLanguage/Community:Alpha]]\n* [[Special:MyLanguage/Community:Zeta]]\n"
 	if got != want {
 		t.Fatalf("unexpected disambiguation wikitext:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestBaseArticleTitle(t *testing.T) {
+	cases := map[string]string{
+		"Community:Sketchu Spring":         "Community:Sketchu Spring",
+		"Community:Sketchu Spring/de":      "Community:Sketchu Spring",
+		"Community:Sketchu Spring/zh-hans": "Community:Sketchu Spring",
+		"Community:Sketchu Spring/pt-br":   "Community:Sketchu Spring",
+		"Prison Escape":                    "Prison Escape",
+	}
+	for in, want := range cases {
+		if got := BaseArticleTitle(in); got != want {
+			t.Fatalf("BaseArticleTitle(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

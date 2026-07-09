@@ -157,16 +157,25 @@ func WorldAliasPageTitle(worldID string) string {
 	return fmt.Sprintf("Community:%s", worldID)
 }
 
+// langLink wraps an article title in Special:MyLanguage so the reader is sent
+// to the translation matching their interface language, falling back to the
+// source page.
+func langLink(target string) string {
+	return "Special:MyLanguage/" + target
+}
+
 // WorldAliasWikitext builds the content of a world-id alias page. A single
 // target becomes a redirect; multiple targets render a {{Disambiguation}} page
 // with a bullet list whose display title is taken from the world's name
-// subpage (Template:World/<id>/name). Targets are sorted so repeated runs
-// produce identical content (keeping EditPage's change detection idempotent).
+// subpage (Template:World/<id>/name). Links go through Special:MyLanguage so
+// translated variants auto-select the reader's language. Targets are sorted so
+// repeated runs produce identical content (keeping EditPage's change detection
+// idempotent).
 func WorldAliasWikitext(worldID string, targets []string) string {
 	sorted := append([]string(nil), targets...)
 	sort.Strings(sorted)
 	if len(sorted) == 1 {
-		return fmt.Sprintf("#REDIRECT [[%s]]\n", sorted[0])
+		return fmt.Sprintf("#REDIRECT [[%s]]\n", langLink(sorted[0]))
 	}
 	nameSubpage := WorldPageTitle(worldID, "name")
 	var b strings.Builder
@@ -174,7 +183,7 @@ func WorldAliasWikitext(worldID string, targets []string) string {
 	b.WriteString("{{Disambiguation}}\n")
 	for _, target := range sorted {
 		b.WriteString("* [[")
-		b.WriteString(target)
+		b.WriteString(langLink(target))
 		b.WriteString("]]\n")
 	}
 	return b.String()
