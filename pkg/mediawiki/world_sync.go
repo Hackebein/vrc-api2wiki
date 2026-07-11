@@ -21,8 +21,7 @@ func WorldPageTitle(worldID, subpath string) string {
 // imageProperties are world properties whose value is an image URL; the image
 // is mirrored to the wiki and the subpage stores the wiki file reference.
 var imageProperties = map[string]struct{}{
-	"imageUrl":          {},
-	"thumbnailImageUrl": {},
+	"imageUrl": {},
 }
 
 // WorldImageFilename returns the wiki file name (without "File:" prefix) for
