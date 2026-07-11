@@ -16,7 +16,7 @@ import (
 
 // requestDelay is applied before every wiki API request to stay gentle on the
 // server.
-const requestDelay = 100 * time.Millisecond
+var requestDelay = 100 * time.Millisecond
 
 // rateLimitBackoffs is the escalating wait schedule when the wiki reports a
 // rate limit (HTTP 429 or the "ratelimited" API error). After the last entry
@@ -141,12 +141,19 @@ func (c *MediaWikiClient) apiRequest(params map[string]string) (map[string]any, 
 	})
 }
 
+const responseBodyPreviewLen = 200
+
 // doRequest executes an HTTP request built by build, applying a per-request
 // delay and retrying on rate-limit responses (HTTP 429 or the "ratelimited"
-// API error) using the escalating rateLimitBackoffs schedule. The request is
-// rebuilt for each attempt so the body can be re-sent.
+// API error) and transient failures (network errors, HTTP 5xx, or non-JSON
+// bodies from gateways/proxies) using the escalating rateLimitBackoffs
+// schedule. The request is rebuilt for each attempt so the body can be
+// re-sent.
 func (c *MediaWikiClient) doRequest(build func() (*http.Request, error)) (map[string]any, error) {
-	for attempt := 0; ; attempt++ {
+	rateLimitAttempt := 0
+	transientAttempt := 0
+
+	for {
 		time.Sleep(requestDelay)
 
 		req, err := build()
@@ -156,7 +163,11 @@ func (c *MediaWikiClient) doRequest(build func() (*http.Request, error)) (map[st
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("execute request: %w", err)
+			if retryErr := c.waitForBackoff(transientAttempt, "request failed: "+err.Error()); retryErr != nil {
+				return nil, fmt.Errorf("execute request: %w", err)
+			}
+			transientAttempt++
+			continue
 		}
 		body, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -165,23 +176,39 @@ func (c *MediaWikiClient) doRequest(build func() (*http.Request, error)) (map[st
 		}
 
 		if resp.StatusCode == http.StatusTooManyRequests {
-			if err := c.waitForRateLimit(attempt, "HTTP 429"); err != nil {
+			if err := c.waitForBackoff(rateLimitAttempt, "HTTP 429"); err != nil {
 				return nil, err
 			}
+			rateLimitAttempt++
+			continue
+		}
+
+		if resp.StatusCode >= http.StatusInternalServerError {
+			detail := fmt.Sprintf("HTTP %d: %s", resp.StatusCode, responseBodyPreview(body))
+			if err := c.waitForBackoff(transientAttempt, detail); err != nil {
+				return nil, fmt.Errorf("server error: %s", detail)
+			}
+			transientAttempt++
 			continue
 		}
 
 		var result map[string]any
 		if err := json.Unmarshal(body, &result); err != nil {
-			return nil, fmt.Errorf("parse json: %w", err)
+			detail := fmt.Sprintf("HTTP %d non-JSON response: %s", resp.StatusCode, responseBodyPreview(body))
+			if retryErr := c.waitForBackoff(transientAttempt, detail); retryErr != nil {
+				return nil, fmt.Errorf("parse json: %w (%s)", err, detail)
+			}
+			transientAttempt++
+			continue
 		}
 		if e, ok := result["error"].(map[string]any); ok {
 			code, _ := e["code"].(string)
 			info, _ := e["info"].(string)
 			if code == "ratelimited" {
-				if err := c.waitForRateLimit(attempt, info); err != nil {
+				if err := c.waitForBackoff(rateLimitAttempt, info); err != nil {
 					return nil, err
 				}
+				rateLimitAttempt++
 				continue
 			}
 			return nil, fmt.Errorf("API error: %s - %s", code, info)
@@ -190,15 +217,23 @@ func (c *MediaWikiClient) doRequest(build func() (*http.Request, error)) (map[st
 	}
 }
 
-// waitForRateLimit sleeps for the backoff duration of the given attempt, or
+func responseBodyPreview(body []byte) string {
+	s := strings.TrimSpace(string(body))
+	if len(s) > responseBodyPreviewLen {
+		return s[:responseBodyPreviewLen] + "..."
+	}
+	return s
+}
+
+// waitForBackoff sleeps for the backoff duration of the given attempt, or
 // returns an error when the retry schedule is exhausted.
-func (c *MediaWikiClient) waitForRateLimit(attempt int, detail string) error {
+func (c *MediaWikiClient) waitForBackoff(attempt int, detail string) error {
 	if attempt >= len(rateLimitBackoffs) {
-		return fmt.Errorf("rate limited (%s): exhausted retries after %d attempts", detail, len(rateLimitBackoffs))
+		return fmt.Errorf("transient failure (%s): exhausted retries after %d attempts", detail, len(rateLimitBackoffs))
 	}
 	wait := rateLimitBackoffs[attempt]
 	if c.logger != nil {
-		c.logger.Warn("rate limited, backing off",
+		c.logger.Warn("wiki request failed, backing off",
 			"detail", detail,
 			"wait", wait.String(),
 			"attempt", attempt+1,
