@@ -42,13 +42,13 @@ func worldString(world map[string]any, key string) string {
 	return strings.TrimSpace(s)
 }
 
-func (c *MediaWikiClient) syncWorldImage(api *vrchat.Client, worldID, property, imageURL, authorName string) (string, error) {
+func (c *MediaWikiClient) syncWorldImage(api *vrchat.Client, world map[string]any, worldID, property, imageURL, authorName string) (string, error) {
 	data, ext, err := api.DownloadImage(imageURL)
 	if err != nil {
 		return "", fmt.Errorf("download %s image: %w", property, err)
 	}
 	filename := WorldImageFilename(worldID, property, ext)
-	description := WorldImageURLFileDescription(worldID, authorName)
+	description := WorldImageURLFileDescription(worldID, authorName, worldDateFromMap(world))
 	uploaded, err := c.UploadFile(filename, data, description)
 	if err != nil {
 		return "", fmt.Errorf("upload %s: %w", filename, err)
@@ -62,13 +62,13 @@ func (c *MediaWikiClient) syncWorldImage(api *vrchat.Client, worldID, property, 
 // syncYouTubeThumbnail mirrors the thumbnail of a world's YouTube preview
 // video to the wiki. The previewYoutubeId subpage keeps the raw video id; the
 // infobox template derives the file name from the world id.
-func (c *MediaWikiClient) syncYouTubeThumbnail(api *vrchat.Client, worldID, videoID string) error {
+func (c *MediaWikiClient) syncYouTubeThumbnail(api *vrchat.Client, world map[string]any, worldID, videoID, authorName string) error {
 	data, ext, err := api.DownloadYouTubeThumbnail(videoID)
 	if err != nil {
 		return err
 	}
 	filename := WorldImageFilename(worldID, "previewYoutubeId", ext)
-	description := YouTubeThumbnailFileDescription(worldID, videoID)
+	description := YouTubeThumbnailFileDescription(worldID, videoID, authorName, worldDateFromMap(world))
 	uploaded, err := c.UploadFile(filename, data, description)
 	if err != nil {
 		return fmt.Errorf("upload %s: %w", filename, err)
@@ -85,7 +85,7 @@ func (c *MediaWikiClient) SyncWorldData(api *vrchat.Client, worldID string, worl
 
 	for subpath, value := range pages {
 		if _, isImage := imageProperties[subpath]; isImage {
-			fileRef, err := c.syncWorldImage(api, worldID, subpath, value, authorName)
+			fileRef, err := c.syncWorldImage(api, world, worldID, subpath, value, authorName)
 			if err != nil {
 				return fmt.Errorf("sync image %s for %s: %w", subpath, worldID, err)
 			}
@@ -94,7 +94,7 @@ func (c *MediaWikiClient) SyncWorldData(api *vrchat.Client, worldID string, worl
 	}
 
 	if videoID, ok := pages["previewYoutubeId"]; ok {
-		if err := c.syncYouTubeThumbnail(api, worldID, videoID); err != nil {
+		if err := c.syncYouTubeThumbnail(api, world, worldID, videoID, authorName); err != nil {
 			return fmt.Errorf("sync youtube thumbnail for %s: %w", worldID, err)
 		}
 	}

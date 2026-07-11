@@ -9,12 +9,16 @@ import (
 )
 
 var excludedKeys = map[string]struct{}{
-	"instances":            {},
-	"slimInstances":        {},
-	"unityPackageUrl":      {},
+	"instances":             {},
+	"slimInstances":         {},
+	"unityPackageUrl":       {},
 	"unityPackageUrlObject": {},
-	"assetUrlObject":       {},
-	"pluginUrlObject":      {},
+	"assetUrlObject":        {},
+	"pluginUrlObject":       {},
+	"thumbnailImageUrl":     {},
+	"occupants":             {},
+	"privateOccupants":      {},
+	"publicOccupants":       {},
 }
 
 func isEmptyValue(v any) bool {

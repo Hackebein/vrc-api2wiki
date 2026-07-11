@@ -55,6 +55,24 @@ func TestFlattenWorld(t *testing.T) {
 	}
 }
 
+func TestFlattenWorldSkipsVolatileAndRedundantFields(t *testing.T) {
+	world := map[string]any{
+		"id":                "wrld_00000000-0000-4000-8000-000000000001",
+		"name":              "Test World",
+		"thumbnailImageUrl": "https://example.com/thumb.png",
+		"occupants":         float64(3),
+		"privateOccupants":  float64(1),
+		"publicOccupants":   float64(2),
+	}
+
+	pages := FlattenWorld(world)
+	for _, key := range []string{"thumbnailImageUrl", "occupants", "privateOccupants", "publicOccupants"} {
+		if _, ok := pages[key]; ok {
+			t.Fatalf("%s should be excluded, got %q", key, pages[key])
+		}
+	}
+}
+
 func TestFlattenWorldObjectKeyedUnityPackages(t *testing.T) {
 	world := map[string]any{
 		"id": "wrld_00000000-0000-4000-8000-000000000001",

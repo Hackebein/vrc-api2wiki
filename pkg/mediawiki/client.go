@@ -79,12 +79,12 @@ func NewMediaWikiClient(config WikiConfig, httpClient *http.Client) (*MediaWikiC
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	c := &MediaWikiClient{
-		apiURL:       config.URL,
-		httpClient:   httpClient,
-		userAgent:    getUserAgent(),
-		tokens:       make(map[string]string),
-		username:     strings.TrimSpace(config.Username),
-		password:     strings.TrimSpace(config.Password),
+		apiURL:      config.URL,
+		httpClient:  httpClient,
+		userAgent:   getUserAgent(),
+		tokens:      make(map[string]string),
+		username:    strings.TrimSpace(config.Username),
+		password:    strings.TrimSpace(config.Password),
 		headerName:  strings.TrimSpace(config.Header),
 		headerValue: strings.TrimSpace(config.HeaderVal),
 		logger:      logger,
