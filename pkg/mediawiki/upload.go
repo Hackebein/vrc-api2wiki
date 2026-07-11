@@ -93,9 +93,10 @@ func (c *MediaWikiClient) GetFileSHA1(filename string) (string, error) {
 }
 
 // UploadFile uploads image bytes as File:<filename>, skipping the upload when
-// the wiki already has a file with an identical SHA1. Returns true when an
-// upload was performed.
-func (c *MediaWikiClient) UploadFile(filename string, data []byte) (bool, error) {
+// the wiki already has a file with an identical SHA1. The file description page
+// is created or updated whenever description is non-empty, including when the
+// binary upload is skipped. Returns true when an upload was performed.
+func (c *MediaWikiClient) UploadFile(filename string, data []byte, description string) (bool, error) {
 	existingSHA1, err := c.GetFileSHA1(filename)
 	if err != nil {
 		return false, fmt.Errorf("check existing file %s: %w", filename, err)
@@ -105,6 +106,9 @@ func (c *MediaWikiClient) UploadFile(filename string, data []byte) (bool, error)
 	if existingSHA1 != "" && strings.EqualFold(existingSHA1, newSHA1) {
 		if c.offline && c.logger != nil {
 			c.logger.Info("offline: skip file (sha1 unchanged on wiki)", "filename", filename)
+		}
+		if err := c.ensureFileDescription(filename, description); err != nil {
+			return false, fmt.Errorf("ensure file description for %s: %w", filename, err)
 		}
 		return false, nil
 	}
@@ -124,6 +128,9 @@ func (c *MediaWikiClient) UploadFile(filename string, data []byte) (bool, error)
 				c.logger.Info("offline: would upload file (sha1 mismatch)", "filename", filename, "file", path, "bytes", len(data))
 			}
 		}
+		if err := c.ensureFileDescription(filename, description); err != nil {
+			return true, fmt.Errorf("ensure file description for %s: %w", filename, err)
+		}
 		return true, nil
 	}
 
@@ -134,6 +141,9 @@ func (c *MediaWikiClient) UploadFile(filename string, data []byte) (bool, error)
 			"comment":        BuildEditSummary("File:"+filename, ""),
 			"token":          csrf,
 			"ignorewarnings": "true",
+		}
+		if text := strings.TrimSpace(description); text != "" {
+			params["text"] = text
 		}
 		result, err := c.apiUploadRequest(params, filename, data)
 		if err != nil {
@@ -154,7 +164,17 @@ func (c *MediaWikiClient) UploadFile(filename string, data []byte) (bool, error)
 	if err != nil {
 		return false, err
 	}
+	if err := c.ensureFileDescription(filename, description); err != nil {
+		return true, fmt.Errorf("ensure file description for %s: %w", filename, err)
+	}
 	return true, nil
+}
+
+func (c *MediaWikiClient) ensureFileDescription(filename, description string) error {
+	if strings.TrimSpace(description) == "" {
+		return nil
+	}
+	return c.EditPage("File:"+filename, description, true)
 }
 
 // imageFilePath returns the offline output path for an uploaded image,

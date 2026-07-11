@@ -30,13 +30,26 @@ func WorldImageFilename(worldID, property, ext string) string {
 	return fmt.Sprintf("%s_%s.%s", worldID, property, ext)
 }
 
-func (c *MediaWikiClient) syncWorldImage(api *vrchat.Client, worldID, property, imageURL string) (string, error) {
+func worldString(world map[string]any, key string) string {
+	v, ok := world[key]
+	if !ok || v == nil {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(s)
+}
+
+func (c *MediaWikiClient) syncWorldImage(api *vrchat.Client, worldID, property, imageURL, authorName string) (string, error) {
 	data, ext, err := api.DownloadImage(imageURL)
 	if err != nil {
 		return "", fmt.Errorf("download %s image: %w", property, err)
 	}
 	filename := WorldImageFilename(worldID, property, ext)
-	uploaded, err := c.UploadFile(filename, data)
+	description := WorldImageURLFileDescription(worldID, authorName)
+	uploaded, err := c.UploadFile(filename, data, description)
 	if err != nil {
 		return "", fmt.Errorf("upload %s: %w", filename, err)
 	}
@@ -55,7 +68,8 @@ func (c *MediaWikiClient) syncYouTubeThumbnail(api *vrchat.Client, worldID, vide
 		return err
 	}
 	filename := WorldImageFilename(worldID, "previewYoutubeId", ext)
-	uploaded, err := c.UploadFile(filename, data)
+	description := YouTubeThumbnailFileDescription(worldID, videoID)
+	uploaded, err := c.UploadFile(filename, data, description)
 	if err != nil {
 		return fmt.Errorf("upload %s: %w", filename, err)
 	}
@@ -67,10 +81,11 @@ func (c *MediaWikiClient) syncYouTubeThumbnail(api *vrchat.Client, worldID, vide
 
 func (c *MediaWikiClient) SyncWorldData(api *vrchat.Client, worldID string, world map[string]any) error {
 	pages := vrchat.FlattenWorld(world)
+	authorName := worldString(world, "authorName")
 
 	for subpath, value := range pages {
 		if _, isImage := imageProperties[subpath]; isImage {
-			fileRef, err := c.syncWorldImage(api, worldID, subpath, value)
+			fileRef, err := c.syncWorldImage(api, worldID, subpath, value, authorName)
 			if err != nil {
 				return fmt.Errorf("sync image %s for %s: %w", subpath, worldID, err)
 			}
