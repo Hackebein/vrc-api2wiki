@@ -58,8 +58,6 @@ func TestYouTubeThumbnailFileDescription(t *testing.T) {
 		"|date        = July 3, 2026",
 		"|author      = RootGentle",
 		"|additional_information = https://www.youtube.com/watch?v=ixGR9XFNfZ4",
-		"== Licensing ==",
-		"{{license 3rd-party-permission}}",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in description:\n%s", want, got)

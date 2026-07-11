@@ -34,10 +34,12 @@ func fileInformationWikitext(p fileInformationParams) string {
 func fileDescriptionPage(info fileInformationParams, license string) string {
 	var b strings.Builder
 	b.WriteString(fileInformationWikitext(info))
-	b.WriteString("== Licensing ==\n")
-	b.WriteString(license)
-	if !strings.HasSuffix(license, "\n") {
-		b.WriteByte('\n')
+	if license != "" {
+		b.WriteString("== Licensing ==\n")
+		b.WriteString(license)
+		if !strings.HasSuffix(license, "\n") {
+			b.WriteByte('\n')
+		}
 	}
 	return b.String()
 }
@@ -104,5 +106,5 @@ func YouTubeThumbnailFileDescription(worldID, videoID, authorName, date string) 
 		date:                  strings.TrimSpace(date),
 		author:                strings.TrimSpace(authorName),
 		additionalInformation: fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID),
-	}, "{{license 3rd-party-permission}}")
+	}, "")
 }
