@@ -19,6 +19,7 @@ var excludedKeys = map[string]struct{}{
 	"occupants":             {},
 	"privateOccupants":      {},
 	"publicOccupants":       {},
+	"tags":                  {},
 }
 
 func isEmptyValue(v any) bool {
@@ -39,6 +40,12 @@ func isEmptyValue(v any) bool {
 	default:
 		return false
 	}
+}
+
+// IsExcludedWorldKey reports whether a top-level world JSON key is omitted from sync.
+func IsExcludedWorldKey(key string) bool {
+	_, ok := excludedKeys[key]
+	return ok
 }
 
 func scalarToString(v any) string {
@@ -169,9 +176,101 @@ var platformLabels = map[string]string{
 	"ios":               "iOS",
 }
 
+const authorTagPrefix = "author_tag_"
+
+var listingTagLabels = map[string]string{
+	"author_tag_avatar": "Avatar Worlds",
+	"author_tag_game":   "Games",
+	"content_featured":  "Featured",
+}
+
+var contentTagLabels = map[string]string{
+	"content_adult":    "Adult",
+	"content_combat":   "Combat",
+	"content_gore":     "Gore",
+	"content_horror":   "Horror",
+	"content_other":    "Other",
+	"content_sex":      "Sex",
+	"content_violence": "Violence",
+}
+
+var excludedAuthorListingTags = map[string]struct{}{
+	"author_tag_avatar": {},
+	"author_tag_game":   {},
+}
+
+func deriveDisplayTags(tags []any) string {
+	parts := make([]string, 0, len(tags))
+	for _, item := range tags {
+		tag := strings.TrimSpace(scalarToString(item))
+		if tag == "" || !strings.HasPrefix(tag, authorTagPrefix) {
+			continue
+		}
+		if _, skip := excludedAuthorListingTags[tag]; skip {
+			continue
+		}
+		parts = append(parts, strings.TrimPrefix(tag, authorTagPrefix))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func deriveListingTags(tags []any) string {
+	parts := make([]string, 0, len(tags))
+	for _, item := range tags {
+		tag := strings.TrimSpace(scalarToString(item))
+		if tag == "" {
+			continue
+		}
+		if label, ok := listingTagLabels[tag]; ok {
+			parts = append(parts, label)
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+func deriveContentTags(tags []any) string {
+	parts := make([]string, 0, len(tags))
+	for _, item := range tags {
+		tag := strings.TrimSpace(scalarToString(item))
+		if tag == "" {
+			continue
+		}
+		if label, ok := contentTagLabels[tag]; ok {
+			parts = append(parts, label)
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+func worldTags(world map[string]any) []any {
+	raw, ok := world["tags"]
+	if !ok || isEmptyValue(raw) {
+		return nil
+	}
+	tags, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	return tags
+}
+
 func addDerivedPages(world map[string]any, pages map[string]string) {
+	delete(pages, "tags")
+
 	if platforms := derivePlatforms(world); platforms != "" {
 		pages["platforms"] = platforms
+	}
+
+	if tags := worldTags(world); len(tags) > 0 {
+		if display := deriveDisplayTags(tags); display != "" {
+			pages["tags"] = display
+		}
+		if listing := deriveListingTags(tags); listing != "" {
+			pages["listing"] = listing
+		}
+		if content := deriveContentTags(tags); content != "" {
+			pages["content"] = content
+		}
 	}
 }
 
