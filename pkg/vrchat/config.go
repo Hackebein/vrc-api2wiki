@@ -15,7 +15,7 @@ func ClientConfigPlatform(clientName string) string {
 	switch strings.TrimSpace(clientName) {
 	case "public", "open-beta":
 		return "PC"
-	case "android":
+	case "quest", "open-beta-quest":
 		return "QuestStore"
 	case "android-steamos":
 		return "Default"

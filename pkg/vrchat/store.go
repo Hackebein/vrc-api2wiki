@@ -12,8 +12,7 @@ import (
 )
 
 const (
-	OfficialStoreID  = "esto_00000000-0000-0000-0000-000000000000"
-	OfficialSellerID = "usr_00000000-0000-0000-0000-000000000011"
+	OfficialStoreID = "esto_00000000-0000-0000-0000-000000000000"
 )
 
 var unsafeFilenameChars = regexp.MustCompile(`[<>:"/\\|?*]`)
@@ -58,15 +57,6 @@ func (c *Client) FetchStoreCatalog(snapshotDir string, avatarLimit int, logger *
 	}
 
 	listingIDs := collectListingIDs(store)
-	sellerIDs, err := c.fetchAllSellerListingIDs()
-	if err != nil {
-		if logger != nil {
-			logger.Warn("seller listings unavailable; using store shelves only", "err", err)
-		}
-	}
-	for _, id := range sellerIDs {
-		listingIDs[id] = true
-	}
 
 	for id := range listingIDs {
 		listing, err := c.fetchHydratedListing(id, snapshotDir)
@@ -125,40 +115,6 @@ func collectListingIDs(store map[string]any) map[string]bool {
 		}
 	}
 	return ids
-}
-
-func (c *Client) fetchAllSellerListingIDs() ([]string, error) {
-	var out []string
-	offset := 0
-	const n = 100
-	for {
-		u := fmt.Sprintf("%s/user/%s/listings?n=%d&offset=%d", apiBase, OfficialSellerID, n, offset)
-		var page []map[string]any
-		body, err := c.AuthedGet(u)
-		if err != nil {
-			return nil, err
-		}
-		if err := json.Unmarshal(body, &page); err != nil {
-			var wrap map[string]any
-			if err2 := json.Unmarshal(body, &wrap); err2 != nil {
-				return nil, fmt.Errorf("parse seller listings: %w", err)
-			}
-			break
-		}
-		if len(page) == 0 {
-			break
-		}
-		for _, item := range page {
-			if id, _ := item["id"].(string); id != "" {
-				out = append(out, id)
-			}
-		}
-		if len(page) < n {
-			break
-		}
-		offset += n
-	}
-	return out, nil
 }
 
 func (c *Client) fetchHydratedListing(id, snapshotDir string) (map[string]any, error) {

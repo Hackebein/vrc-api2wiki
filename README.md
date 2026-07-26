@@ -3,7 +3,7 @@
 A Go service that keeps [VRChat Wiki](https://wiki.vrchat.com) in sync with live VRChat API data:
 
 1. **Worlds** — populate `Template:World/<id>/…` data pages for infoboxes
-2. **Marketplace** — store shelves, seller listings, and paid avatars as `{{InventoryContentDisplay}}` pages plus listing images
+2. **Marketplace** — store shelves and paid avatars as `{{InventoryContentDisplay}}` pages plus listing images
 3. **Steam builds** — download VRChat depots via shipped [DepotDownloader](https://github.com/SteamRE/DepotDownloader) and publish client version/build metadata
 
 ## Quick start

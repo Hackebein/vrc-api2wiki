@@ -13,7 +13,8 @@ func TestClientConfigPlatform(t *testing.T) {
 	cases := map[string]string{
 		"public":           "PC",
 		"open-beta":        "PC",
-		"android":          "QuestStore",
+		"quest":            "QuestStore",
+		"open-beta-quest":  "QuestStore",
 		"android-steamos":  "Default",
 		"something-else":   "Default",
 	}

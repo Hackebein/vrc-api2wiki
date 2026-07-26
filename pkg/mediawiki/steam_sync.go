@@ -87,15 +87,25 @@ func RunSteamSync(wiki *MediaWikiClient, logger *slog.Logger) error {
 }
 
 func syncMetaQuestAndroid(wiki *MediaWikiClient, root string, mins map[string]int, logger *slog.Logger) error {
-	if logger != nil {
-		logger.Info("fetching Meta Quest store version", "appId", meta.VRChatQuestAppID)
-	}
 	httpClient := &http.Client{Timeout: 60 * time.Second}
-	build, err := meta.FetchVRChatQuestBuild(httpClient)
-	if err != nil {
-		return fmt.Errorf("meta quest version: %w", err)
+	if logger != nil {
+		logger.Info("fetching Meta Quest LIVE version", "appId", meta.VRChatQuestAppID)
 	}
-	return writeClientBuild(wiki, root, meta.QuestAndroidClientName, build, mins, logger)
+	live, err := meta.FetchVRChatQuestBuild(httpClient)
+	if err != nil {
+		return fmt.Errorf("meta quest live version: %w", err)
+	}
+	if err := writeClientBuild(wiki, root, meta.QuestClientName, live, mins, logger); err != nil {
+		return err
+	}
+	if logger != nil {
+		logger.Info("fetching Meta Quest Open Beta version", "appId", meta.VRChatQuestAppID)
+	}
+	openBeta, err := meta.FetchVRChatQuestOpenBetaBuild(httpClient)
+	if err != nil {
+		return fmt.Errorf("meta quest open beta version: %w", err)
+	}
+	return writeClientBuild(wiki, root, meta.QuestOpenBetaClientName, openBeta, mins, logger)
 }
 
 func syncSteamClient(
