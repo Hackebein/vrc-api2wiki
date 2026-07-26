@@ -67,17 +67,14 @@ func (c *Client) FetchStoreCatalog(snapshotDir string, avatarLimit int, logger *
 		snap.TypeCounts[ListingTypeLabel(listing)]++
 	}
 
-	// TODO: remove this once we are ready with the pages for paid avatars
-	avatarLimit = 0
-	avatars, err := c.FetchPaidMarketplaceAvatars(snapshotDir, avatarLimit)
-	if err != nil {
-		return nil, fmt.Errorf("marketplace avatars: %w", err)
-	}
-	snap.Avatars = avatars
-	snap.TypeCounts["Avatar"] += len(avatars)
-	if logger != nil && avatarLimit > 0 {
-		logger.Info("avatar limit applied", "limit", avatarLimit, "fetched", len(avatars))
-	}
+	// avatars, err := c.FetchPaidMarketplaceAvatars(snapshotDir, avatarLimit)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("marketplace avatars: %w", err)
+	// }
+	// snap.Avatars = avatars
+	// snap.TypeCounts["Avatar"] += len(avatars)
+	// if logger != nil && avatarLimit > 0 {
+	// 	logger.Info("avatar limit applied", "limit", avatarLimit, "fetched", len(avatars))
 
 	if snapshotDir != "" {
 		if err := writeJSON(filepath.Join(snapshotDir, "snapshot_meta.json"), snap); err != nil {
