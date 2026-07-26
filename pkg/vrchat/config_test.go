@@ -11,12 +11,12 @@ import (
 
 func TestClientConfigPlatform(t *testing.T) {
 	cases := map[string]string{
-		"public":           "PC",
-		"open-beta":        "PC",
-		"quest":            "QuestStore",
-		"open-beta-quest":  "QuestStore",
-		"android-steamos":  "Default",
-		"something-else":   "Default",
+		"windows":                 "PC",
+		"open-beta-windows":       "PC",
+		"android-quest":           "QuestStore",
+		"open-beta-android-quest": "QuestStore",
+		"android-steamos":         "Default",
+		"something-else":          "Default",
 	}
 	for client, want := range cases {
 		if got := ClientConfigPlatform(client); got != want {
@@ -76,9 +76,9 @@ func TestGetMinSupportedClientBuildNumbers(t *testing.T) {
 	if mins["PC"] != 1865 || mins["QuestStore"] != 1865 {
 		t.Fatalf("%v", mins)
 	}
-	n, err := MinBuildForClient(mins, "public")
+	n, err := MinBuildForClient(mins, "windows")
 	if err != nil || n != 1865 {
-		t.Fatalf("public min %d %v", n, err)
+		t.Fatalf("windows min %d %v", n, err)
 	}
 	n, err = MinBuildForClient(mins, "android-steamos")
 	if err != nil || n != 1860 {

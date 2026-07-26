@@ -14,8 +14,8 @@ import (
 
 const (
 	VRChatQuestAppID           = "1856672347794301"
-	QuestClientName            = "quest"
-	QuestOpenBetaClientName    = "open-beta-quest"
+	QuestClientName            = "android-quest"
+	QuestOpenBetaClientName    = "open-beta-android-quest"
 	oculusGraphQLURL           = "https://graph.oculus.com/graphql"
 	oculusStoreToken           = "OC|752908224809889|"
 	oculusVersionsDocID        = "1586217024733717"

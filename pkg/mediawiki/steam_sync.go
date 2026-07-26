@@ -56,14 +56,14 @@ func RunSteamSync(wiki *MediaWikiClient, logger *slog.Logger) error {
 			return fmt.Errorf("shipped DepotDownloader missing at %s (run scripts/fetch-depotdownloader.sh)", dd)
 		}
 
-		for _, branch := range steam.DefaultBranches {
-			branch := branch
-			if err := syncSteamClient(wiki, root, branch, mins, logger,
+		for _, client := range steam.DefaultWindowsClients {
+			client := client
+			if err := syncSteamClient(wiki, root, client.ClientName, mins, logger,
 				func(outDir string) (string, string, error) {
-					return steam.DownloadBranch(dd, branch, outDir, username, password, shared)
+					return steam.DownloadBranch(dd, client.SteamBranch, outDir, username, password, shared)
 				},
 				func(outDir string) (*steam.ClientBuild, error) {
-					return steam.ExtractBuildFromDir(outDir, branch)
+					return steam.ExtractBuildFromDir(outDir, client.ClientName)
 				},
 			); err != nil {
 				return err

@@ -18,7 +18,15 @@ const (
 	VRChatAndroidDepotID = "438102"
 )
 
-var DefaultBranches = []string{"public", "open-beta"}
+type WindowsClient struct {
+	SteamBranch string
+	ClientName  string
+}
+
+var DefaultWindowsClients = []WindowsClient{
+	{SteamBranch: "public", ClientName: "windows"},
+	{SteamBranch: "open-beta", ClientName: "open-beta-windows"},
+}
 
 const AndroidClientName = "android-steamos"
 
