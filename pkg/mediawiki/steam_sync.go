@@ -1,0 +1,175 @@
+package mediawiki
+
+import (
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/Hackebein/vrc-api2wiki/pkg/meta"
+	"github.com/Hackebein/vrc-api2wiki/pkg/steam"
+	"github.com/Hackebein/vrc-api2wiki/pkg/vrchat"
+)
+
+func ClientBuildPageTitle(name, subpath string) string {
+	if subpath == "" {
+		return "Template:ClientBuild/" + name
+	}
+	return "Template:ClientBuild/" + name + "/" + subpath
+}
+
+func RunSteamSync(wiki *MediaWikiClient, logger *slog.Logger) error {
+	root, err := steam.FindRepoRoot()
+	if err != nil {
+		return err
+	}
+
+	httpClient := &http.Client{Timeout: 60 * time.Second}
+	vrc := vrchat.NewClient(httpClient)
+	mins, err := vrc.GetMinSupportedClientBuildNumbers()
+	if err != nil {
+		return fmt.Errorf("vrchat config min builds: %w", err)
+	}
+	if logger != nil {
+		logger.Info("vrchat minSupportedClientBuildNumber loaded", "platforms", len(mins))
+	}
+
+	if err := syncMetaQuestAndroid(wiki, root, mins, logger); err != nil {
+		return err
+	}
+
+	username := strings.TrimSpace(os.Getenv("STEAM_USERNAME"))
+	password := strings.TrimSpace(os.Getenv("STEAM_PASSWORD"))
+	shared := strings.TrimSpace(os.Getenv("STEAM_SHARED_SECRET"))
+	if username == "" || password == "" {
+		if logger != nil {
+			logger.Info("skipping steam depot sync: STEAM_USERNAME/STEAM_PASSWORD not set")
+		}
+	} else if shared == "" {
+		return fmt.Errorf("STEAM_SHARED_SECRET is required for steam depot sync (mobile authenticator shared_secret, base64)")
+	} else {
+		dd := steam.DepotDownloaderPath(root)
+		if st, err := os.Stat(dd); err != nil || st.IsDir() {
+			return fmt.Errorf("shipped DepotDownloader missing at %s (run scripts/fetch-depotdownloader.sh)", dd)
+		}
+
+		for _, branch := range steam.DefaultBranches {
+			branch := branch
+			if err := syncSteamClient(wiki, root, branch, mins, logger,
+				func(outDir string) (string, string, error) {
+					return steam.DownloadBranch(dd, branch, outDir, username, password, shared)
+				},
+				func(outDir string) (*steam.ClientBuild, error) {
+					return steam.ExtractBuildFromDir(outDir, branch)
+				},
+			); err != nil {
+				return err
+			}
+		}
+
+		androidName := steam.AndroidClientName
+		if err := syncSteamClient(wiki, root, androidName, mins, logger,
+			func(outDir string) (string, string, error) {
+				return steam.DownloadAndroidDepot(dd, outDir, username, password, shared)
+			},
+			func(outDir string) (*steam.ClientBuild, error) {
+				return steam.ExtractBuildFromAndroidDir(outDir, androidName)
+			},
+		); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func syncMetaQuestAndroid(wiki *MediaWikiClient, root string, mins map[string]int, logger *slog.Logger) error {
+	if logger != nil {
+		logger.Info("fetching Meta Quest store version", "appId", meta.VRChatQuestAppID)
+	}
+	httpClient := &http.Client{Timeout: 60 * time.Second}
+	build, err := meta.FetchVRChatQuestBuild(httpClient)
+	if err != nil {
+		return fmt.Errorf("meta quest version: %w", err)
+	}
+	return writeClientBuild(wiki, root, meta.QuestAndroidClientName, build, mins, logger)
+}
+
+func syncSteamClient(
+	wiki *MediaWikiClient,
+	root, name string,
+	mins map[string]int,
+	logger *slog.Logger,
+	download func(outDir string) (manifestID, steamBuildID string, err error),
+	extract func(outDir string) (*steam.ClientBuild, error),
+) error {
+	outDir := filepath.Join(root, "steam-output", "depots", name)
+	if logger != nil {
+		logger.Info("steam depot download", "client", name, "dir", outDir)
+	}
+	manifestID, steamBuildID, err := download(outDir)
+	if err != nil {
+		return err
+	}
+	build, err := extract(outDir)
+	if err != nil {
+		return fmt.Errorf("extract build %s: %w", name, err)
+	}
+	if manifestID != "" {
+		build.ManifestID = manifestID
+	}
+	if steamBuildID != "" {
+		build.SteamBuildID = steamBuildID
+	}
+	return writeClientBuild(wiki, root, name, build, mins, logger)
+}
+
+func writeClientBuild(wiki *MediaWikiClient, root, name string, build *steam.ClientBuild, mins map[string]int, logger *slog.Logger) error {
+	min, err := vrchat.MinBuildForClient(mins, name)
+	if err != nil {
+		return err
+	}
+	extracted := build.BuildNumber
+	if vrchat.ClearClientBuildIfBelowMin(build, min) {
+		if logger != nil {
+			logger.Info("client build below min; clearing version",
+				"client", name,
+				"platform", vrchat.ClientConfigPlatform(name),
+				"extractedBuildNumber", extracted,
+				"minBuildNumber", min,
+				"rawMatch", build.RawMatch)
+		}
+	}
+
+	jsonPath := filepath.Join(root, "steam-output", name+".json")
+	if err := steam.WriteBuildJSON(jsonPath, build); err != nil {
+		return err
+	}
+
+	pages := steam.ClientBuildPages(build)
+	for subpath, value := range pages {
+		title := ClientBuildPageTitle(name, subpath)
+		if err := wiki.EditPage(title, value, true); err != nil {
+			return fmt.Errorf("edit %s: %w", title, err)
+		}
+	}
+	marker := fmt.Sprintf("{{ClientBuild/%s/version}} ({{ClientBuild/%s/buildNumber}})", name, name)
+	if err := wiki.EditPage(ClientBuildPageTitle(name, ""), marker, true); err != nil {
+		return fmt.Errorf("edit %s: %w", ClientBuildPageTitle(name, ""), err)
+	}
+
+	if logger != nil {
+		logger.Info("client build written",
+			"client", name,
+			"version", build.Version,
+			"buildNumber", build.BuildNumber,
+			"buildHash", build.BuildHash,
+			"minBuildNumber", min,
+			"pages", len(pages),
+			"json", jsonPath)
+	}
+	return nil
+}

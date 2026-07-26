@@ -1,68 +1,73 @@
 # VRC-API2WIKI
 
-A Go service that keeps [VRChat Wiki](https://wiki.vrchat.com) world infoboxes in sync with live metadata from the public VRChat API. When a world page uses `Template:Infobox/World` or `Template:Infobox/Official World` with an `id` parameter, this tool populates the backing data subpages so the infobox renders current API values automatically.
+A Go service that keeps [VRChat Wiki](https://wiki.vrchat.com) in sync with live VRChat API data:
 
-## How it works
-
-Each sync run follows three steps:
-
-1. **Discover world IDs** — Query the MediaWiki API for pages transcluding `Template:Infobox/World` or `Template:Infobox/Official World`, then parse wikitext for world IDs from the `id=wrld_...` parameter or from `link=` (`{{World link|wrld_...|Name}}` / `{{VRC link|https://vrchat.com/home/world/wrld_...|Name}}`). For each valid ID, keep the marker page `Template:World/<id>` in sync with the id-only infobox call(s) used during discovery.
-2. **Fetch VRChat API data** — For each discovered ID, call `GET https://api.vrchat.cloud/api/1/worlds/<id>`.
-3. **Write world data** — Create or update `Template:World/<id>/<property>` pages. Nested JSON objects become nested page paths (e.g. `unityPackages/standalonewindows/created_at`). Scalar arrays (e.g. `tags`) are stored comma-separated on a single page.
+1. **Worlds** — populate `Template:World/<id>/…` data pages for infoboxes
+2. **Marketplace** — store shelves, seller listings, and paid avatars as `{{InventoryContentDisplay}}` pages plus listing images
+3. **Steam builds** — download VRChat depots via shipped [DepotDownloader](https://github.com/SteamRE/DepotDownloader) and publish client version/build metadata
 
 ## Quick start
 
 ```bash
 git clone https://github.com/Hackebein/vrc-api2wiki.git
 cd vrc-api2wiki
+bash scripts/fetch-depotdownloader.sh
 
-export VRCWIKI_USERNAME='your-bot'
-export VRCWIKI_PASSWORD='your-password'
-export VRCWIKI_AUTHORIZATION_HEADER='...'
-export VRCWIKI_AUTHORIZATION_VALUE='...'
+# Local / offline wiki writes (recommended while testing):
+unset VRCWIKI_USERNAME VRCWIKI_PASSWORD
+
+export VRCHAT_USERNAME='…'
+export VRCHAT_PASSWORD='…'
+export VRCHAT_TOTP_SECRET='…'   # base32
+
+export STEAM_USERNAME='…'
+export STEAM_PASSWORD='…'
+export STEAM_SHARED_SECRET='…'  # base64
 
 go run ./cmd/vrc-api2wiki
 ```
 
 ## Configuration
 
+### Wiki
+
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `VRCWIKI_API_URL` | No | `https://wiki.vrchat.com/api.php` | MediaWiki API endpoint |
-| `VRCWIKI_USERNAME` | Yes* | — | Wiki bot or service account username |
+| `VRCWIKI_USERNAME` | Yes* | — | Wiki bot username |
 | `VRCWIKI_PASSWORD` | Yes* | — | Wiki account password |
 | `VRCWIKI_AUTHORIZATION_HEADER` | No | — | Extra HTTP header name (Cloudflare bypass) |
-| `VRCWIKI_AUTHORIZATION_VALUE` | No | — | Extra HTTP header value (Cloudflare bypass) |
-| `VRC_API2WIKI_WORLD_IDS` | No | — | Comma-separated world IDs; skips wiki discovery |
-| `VRC_API2WIKI_LIMIT` | No | all | Positive integer: sync only the first *n* discovered IDs. |
+| `VRCWIKI_AUTHORIZATION_VALUE` | No | — | Extra HTTP header value |
+| `VRC_API2WIKI_WORLD_IDS` | No | — | Comma-separated world IDs; skips discovery |
+| `VRC_API2WIKI_LIMIT` | No | all | Cap worlds **and** paid marketplace avatars to the first *n* each |
 
-\* Omitting both `VRCWIKI_USERNAME` and `VRCWIKI_PASSWORD` enables [offline mode](#offline-mode).
+\* Omitting both username and password enables [offline mode](#offline-mode).
+
+### VRChat marketplace
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VRCHAT_USERNAME` | Yes for marketplace | Account email/username |
+| `VRCHAT_PASSWORD` | Yes for marketplace | Password |
+| `VRCHAT_TOTP_SECRET` | Yes for marketplace | Raw base32 TOTP secret (not an otpauth URI) |
+
+### Steam builds
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `STEAM_USERNAME` | Yes for steam | Steam account that owns VRChat |
+| `STEAM_PASSWORD` | Yes for steam | Password |
+| `STEAM_SHARED_SECRET` | Yes for steam | Mobile authenticator `shared_secret` (base64); used to generate Steam Guard codes |
 
 ## Offline mode
 
-When credentials are omitted, the tool never logs in and never writes to the wiki:
+When wiki credentials are omitted, the tool never logs in and never writes to the wiki:
 
-- **Reads** — Discovery, existing page wikitext, and file SHA1s are fetched from the live wiki API.
-- **Writes** — Page edits and image uploads are written to `./wiki-output/` instead. Logs indicate what would have happened (`would create page`, `would edit page (content changed)`, `skip page (unchanged on wiki)`, etc.).
-
-## Development
-
-```bash
-go build -o /dev/null ./...
-go vet ./...
-go test ./...
-```
-
-## Docker
-
-```bash
-docker build -t vrc-api2wiki .
-docker run --rm \
-  -e VRCWIKI_USERNAME -e VRCWIKI_PASSWORD \
-  -e VRCWIKI_AUTHORIZATION_HEADER -e VRCWIKI_AUTHORIZATION_VALUE \
-  vrc-api2wiki
-```
+- **Reads** — Discovery and existing page checks still hit the live wiki API when needed for worlds.
+- **Writes** — Page edits and image uploads go to `./wiki-output/` instead.
 
 ## License
 
 This project is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (AGPL-3.0-or-later).
+
+Bundled DepotDownloader is GPL-2.0; see [third_party/DepotDownloader/NOTICE](third_party/DepotDownloader/NOTICE).

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,6 +25,9 @@ func getUserAgent() string {
 type Client struct {
 	httpClient *http.Client
 	userAgent  string
+
+	authMu      sync.Mutex
+	lastAuthReq time.Time
 }
 
 func NewClient(httpClient *http.Client) *Client {

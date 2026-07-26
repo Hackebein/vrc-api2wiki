@@ -1,1 +1,9 @@
 wiki-output/
+store-data/
+steam-output/
+.vrchat-session/
+third_party/DepotDownloader/DepotDownloader
+third_party/DepotDownloader/DepotDownloader.exe
+third_party/DepotDownloader/account.config
+third_party/DepotDownloader/*.db
+*.zip

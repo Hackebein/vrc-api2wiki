@@ -1,0 +1,8 @@
+DepotDownloader
+https://github.com/SteamRE/DepotDownloader
+
+Licensed under the GNU General Public License v2.0.
+See https://github.com/SteamRE/DepotDownloader/blob/master/LICENSE
+
+This directory contains a pinned upstream release binary used by vrc-api2wiki
+to download VRChat Steam depots for client version/build extraction.

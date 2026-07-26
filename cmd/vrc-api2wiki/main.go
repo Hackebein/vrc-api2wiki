@@ -4,6 +4,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"net/http/cookiejar"
 	"os"
 	"time"
 
@@ -24,7 +25,11 @@ func main() {
 	wikiHdrName := os.Getenv("VRCWIKI_AUTHORIZATION_HEADER")
 	wikiHdrValue := os.Getenv("VRCWIKI_AUTHORIZATION_VALUE")
 
-	httpClient := &http.Client{Timeout: 60 * time.Second}
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		stdLogger.Fatalf("cookie jar: %v", err)
+	}
+	httpClient := &http.Client{Timeout: 120 * time.Second, Jar: jar}
 
 	wikiClient, err := mediawiki.NewMediaWikiClient(mediawiki.WikiConfig{
 		URL:       wikiAPI,
@@ -41,7 +46,19 @@ func main() {
 
 	stdLogger.Println("running world sync")
 	if err := mediawiki.RunSync(wikiClient, apiClient, logger); err != nil {
-		stdLogger.Fatalf("sync failed: %v", err)
+		stdLogger.Fatalf("world sync failed: %v", err)
 	}
-	stdLogger.Println("sync complete")
+	stdLogger.Println("world sync complete")
+
+	stdLogger.Println("running marketplace sync")
+	if err := mediawiki.RunStoreSync(wikiClient, apiClient, logger); err != nil {
+		stdLogger.Fatalf("marketplace sync failed: %v", err)
+	}
+	stdLogger.Println("marketplace sync complete")
+
+	stdLogger.Println("running steam sync")
+	if err := mediawiki.RunSteamSync(wikiClient, logger); err != nil {
+		stdLogger.Fatalf("steam sync failed: %v", err)
+	}
+	stdLogger.Println("steam sync complete")
 }

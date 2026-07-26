@@ -24,8 +24,20 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Fetch DepotDownloader
+        run: bash scripts/fetch-depotdownloader.sh
+
       - name: Build
         run: go build -o /dev/null ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Restore VRChat session cache
+        uses: actions/cache@v4
+        with:
+          path: .vrchat-session/cookies.jar
+          key: vrchat-api2wiki-session-v1
 
       - name: Run sync
         env:
@@ -34,4 +46,10 @@ jobs:
           VRCWIKI_PASSWORD: ${{ secrets.VRCWIKI_PASSWORD }}
           VRCWIKI_AUTHORIZATION_HEADER: ${{ secrets.VRCWIKI_AUTHORIZATION_HEADER }}
           VRCWIKI_AUTHORIZATION_VALUE: ${{ secrets.VRCWIKI_AUTHORIZATION_VALUE }}
+          VRCHAT_USERNAME: ${{ secrets.VRCHAT_USERNAME }}
+          VRCHAT_PASSWORD: ${{ secrets.VRCHAT_PASSWORD }}
+          VRCHAT_TOTP_SECRET: ${{ secrets.VRCHAT_TOTP_SECRET }}
+          STEAM_USERNAME: ${{ secrets.STEAM_USERNAME }}
+          STEAM_PASSWORD: ${{ secrets.STEAM_PASSWORD }}
+          STEAM_SHARED_SECRET: ${{ secrets.STEAM_SHARED_SECRET }}
         run: go run ./cmd/vrc-api2wiki

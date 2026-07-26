@@ -410,7 +410,10 @@ func (c *MediaWikiClient) PageExists(title string) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-	if strings.Contains(err.Error(), "page does not exist") {
+	msg := err.Error()
+	if strings.Contains(msg, "page does not exist") ||
+		strings.Contains(msg, "no revisions found for page") ||
+		strings.Contains(msg, "could not extract content from page") {
 		return false, nil
 	}
 	return false, err
@@ -421,7 +424,10 @@ func (c *MediaWikiClient) EditPage(title, text string, bot bool) error {
 	pageMissing := false
 	currentContent, err := c.getPageContent(title)
 	if err != nil {
-		if !strings.Contains(err.Error(), "page does not exist") {
+		msg := err.Error()
+		if !strings.Contains(msg, "page does not exist") &&
+			!strings.Contains(msg, "no revisions found for page") &&
+			!strings.Contains(msg, "could not extract content from page") {
 			return fmt.Errorf("get current content for page %s: %w", title, err)
 		}
 		pageMissing = true
