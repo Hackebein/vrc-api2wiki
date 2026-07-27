@@ -285,7 +285,7 @@ func (c *MediaWikiClient) EnsureWorldMarkerPage(worldID string, infoboxes []stri
 		return nil
 	}
 	title := WorldPageTitle(worldID, "")
-	if err := c.WritePage(title, WorldMarkerWikitext(worldID, infoboxes), true); err != nil {
+	if err := c.EditPage(title, WorldMarkerWikitext(worldID, infoboxes), true); err != nil {
 		return err
 	}
 	meta.Infoboxes = append([]string(nil), expected...)

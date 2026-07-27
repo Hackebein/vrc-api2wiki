@@ -455,8 +455,8 @@ func (c *MediaWikiClient) EditPage(title, text string, bot bool) error {
 	return c.WritePage(title, text, bot)
 }
 
-// WritePage writes title without reading the current wiki page first.
-// Callers that already know the content changed (API snapshot diff) should use this.
+// WritePage performs the edit/offline write with no content comparison.
+// Sync callers should use EditPage so unchanged wiki pages are not rewritten.
 func (c *MediaWikiClient) WritePage(title, text string, bot bool) error {
 	trimmedNew := strings.TrimSpace(text)
 	summary := BuildEditSummary(title, trimmedNew)

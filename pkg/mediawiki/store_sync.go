@@ -239,8 +239,8 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 			continue
 		}
 		page := vrchat.RenderShelfWikitext(wikiTitle, iconFile, cards)
-		if err := wiki.WritePage(StoreListingsPageTitle(year, wikiTitle), page, true); err != nil {
-			return fmt.Errorf("write shelf %s: %w", pathTitle, err)
+		if err := wiki.EditPage(StoreListingsPageTitle(year, wikiTitle), page, true); err != nil {
+			return fmt.Errorf("edit shelf %s: %w", pathTitle, err)
 		}
 		offers = append(offers, currentOfferShelf{Title: wikiTitle, IconFile: iconFile})
 	}
@@ -279,8 +279,8 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 			offerRows[i] = struct{ Title, IconFile string }{Title: o.Title, IconFile: o.IconFile}
 		}
 		page := vrchat.RenderCurrentOffersWikitext(year, offerRows)
-		if err := wiki.WritePage(StoreCurrentOffersPageTitle(), page, true); err != nil {
-			return fmt.Errorf("write current offers: %w", err)
+		if err := wiki.EditPage(StoreCurrentOffersPageTitle(), page, true); err != nil {
+			return fmt.Errorf("edit current offers: %w", err)
 		}
 	}
 

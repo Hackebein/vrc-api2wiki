@@ -144,8 +144,8 @@ func (c *MediaWikiClient) SyncWorldData(api *vrchat.Client, worldID string, worl
 		}
 		title := WorldPageTitle(worldID, subpath)
 		text := SanitizeForWiki(value)
-		if err := c.WritePage(title, text, true); err != nil {
-			return fmt.Errorf("write %s: %w", title, err)
+		if err := c.EditPage(title, text, true); err != nil {
+			return fmt.Errorf("edit %s: %w", title, err)
 		}
 		written++
 	}
@@ -264,7 +264,7 @@ func (c *MediaWikiClient) EnsureWorldAliasPage(worldID string, targets []string,
 	if ok && stringListsEqual(meta.Articles, targets) {
 		return nil
 	}
-	if err := c.WritePage(WorldAliasPageTitle(worldID), WorldAliasWikitext(worldID, targets), true); err != nil {
+	if err := c.EditPage(WorldAliasPageTitle(worldID), WorldAliasWikitext(worldID, targets), true); err != nil {
 		return err
 	}
 	meta.Articles = append([]string(nil), targets...)
