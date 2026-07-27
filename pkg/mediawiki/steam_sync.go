@@ -13,6 +13,7 @@ import (
 	"github.com/Hackebein/vrc-api2wiki/pkg/pico"
 	"github.com/Hackebein/vrc-api2wiki/pkg/playstore"
 	"github.com/Hackebein/vrc-api2wiki/pkg/steam"
+	"github.com/Hackebein/vrc-api2wiki/pkg/vcc"
 	"github.com/Hackebein/vrc-api2wiki/pkg/viveport"
 	"github.com/Hackebein/vrc-api2wiki/pkg/vrchat"
 )
@@ -32,12 +33,18 @@ func RunSteamSync(wiki *MediaWikiClient, logger *slog.Logger) error {
 
 	httpClient := &http.Client{Timeout: 60 * time.Second}
 	vrc := vrchat.NewClient(httpClient)
-	mins, err := vrc.GetMinSupportedClientBuildNumbers()
+	mins, sdkUnity, err := vrc.GetClientBuildConfig()
 	if err != nil {
-		return fmt.Errorf("vrchat config min builds: %w", err)
+		return fmt.Errorf("vrchat config: %w", err)
 	}
 	if logger != nil {
-		logger.Info("vrchat minSupportedClientBuildNumber loaded", "platforms", len(mins))
+		logger.Info("vrchat config loaded", "platforms", len(mins), "sdkUnityVersion", sdkUnity)
+	}
+	if err := syncUnitySDK(wiki, root, sdkUnity, logger); err != nil {
+		return err
+	}
+	if err := syncCreatorCompanionTools(wiki, root, logger); err != nil {
+		return err
 	}
 
 	if err := syncMetaQuestAndroid(wiki, root, mins, logger); err != nil {
@@ -95,6 +102,72 @@ func RunSteamSync(wiki *MediaWikiClient, logger *slog.Logger) error {
 		}
 	}
 
+	return nil
+}
+
+func syncUnitySDK(wiki *MediaWikiClient, root, version string, logger *slog.Logger) error {
+	return writeToolVersion(wiki, root, vrchat.UnitySDKClientName, version, logger)
+}
+
+func syncCreatorCompanionTools(wiki *MediaWikiClient, root string, logger *slog.Logger) error {
+	httpClient := &http.Client{Timeout: 60 * time.Second}
+
+	if logger != nil {
+		logger.Info("fetching VRChat Creator Companion version")
+	}
+	stable, err := vcc.FetchCreatorCompanion(httpClient)
+	if err != nil {
+		return fmt.Errorf("creator companion version: %w", err)
+	}
+	if err := writeToolVersion(wiki, root, vcc.CreatorCompanionClientName, stable.Version, logger); err != nil {
+		return err
+	}
+
+	if logger != nil {
+		logger.Info("fetching VRChat Creator Companion beta version")
+	}
+	beta, err := vcc.FetchCreatorCompanionBeta(httpClient)
+	if err != nil {
+		return fmt.Errorf("creator companion beta version: %w", err)
+	}
+	if err := writeToolVersion(wiki, root, vcc.CreatorCompanionBetaClientName, beta.Version, logger); err != nil {
+		return err
+	}
+
+	if logger != nil {
+		logger.Info("fetching VRC Quick Launcher version")
+	}
+	ql, err := vcc.FetchQuickLauncher(httpClient)
+	if err != nil {
+		return fmt.Errorf("quick launcher version: %w", err)
+	}
+	return writeToolVersion(wiki, root, vcc.QuickLauncherClientName, ql.Version, logger)
+}
+
+func writeToolVersion(wiki *MediaWikiClient, root, name, version string, logger *slog.Logger) error {
+	build := &steam.ClientBuild{
+		Version:   version,
+		Branch:    name,
+		FetchedAt: time.Now().UTC(),
+	}
+	jsonPath := filepath.Join(root, "steam-output", name+".json")
+	if err := steam.WriteBuildJSON(jsonPath, build); err != nil {
+		return err
+	}
+	versionTitle := ClientBuildPageTitle(name, "version")
+	if err := wiki.EditPage(versionTitle, version, true); err != nil {
+		return fmt.Errorf("edit %s: %w", versionTitle, err)
+	}
+	marker := fmt.Sprintf("{{ClientBuild/%s/version}}", name)
+	if err := wiki.EditPage(ClientBuildPageTitle(name, ""), marker, true); err != nil {
+		return fmt.Errorf("edit %s: %w", ClientBuildPageTitle(name, ""), err)
+	}
+	if logger != nil {
+		logger.Info("tool version written",
+			"client", name,
+			"version", version,
+			"json", jsonPath)
+	}
 	return nil
 }
 

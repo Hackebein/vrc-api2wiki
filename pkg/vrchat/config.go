@@ -11,6 +11,8 @@ import (
 	"github.com/Hackebein/vrc-api2wiki/pkg/steam"
 )
 
+const UnitySDKClientName = "unity-sdk"
+
 func ClientConfigPlatform(clientName string) string {
 	switch strings.TrimSpace(clientName) {
 	case "windows", "open-beta-windows":
@@ -32,7 +34,14 @@ func ClientConfigPlatform(clientName string) string {
 	}
 }
 
-func (c *Client) GetMinSupportedClientBuildNumbers() (map[string]int, error) {
+type apiConfig struct {
+	MinSupportedClientBuildNumber map[string]struct {
+		MinBuildNumber int `json:"minBuildNumber"`
+	} `json:"minSupportedClientBuildNumber"`
+	SdkUnityVersion string `json:"sdkUnityVersion"`
+}
+
+func (c *Client) fetchAPIConfig() (*apiConfig, error) {
 	req, err := http.NewRequest(http.MethodGet, apiBase+"/config", nil)
 	if err != nil {
 		return nil, err
@@ -50,14 +59,14 @@ func (c *Client) GetMinSupportedClientBuildNumbers() (map[string]int, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("config HTTP %d: %s", resp.StatusCode, truncate(string(body), 300))
 	}
-	var parsed struct {
-		MinSupportedClientBuildNumber map[string]struct {
-			MinBuildNumber int `json:"minBuildNumber"`
-		} `json:"minSupportedClientBuildNumber"`
-	}
+	var parsed apiConfig
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
+	return &parsed, nil
+}
+
+func minBuildMap(parsed *apiConfig) (map[string]int, error) {
 	if len(parsed.MinSupportedClientBuildNumber) == 0 {
 		return nil, fmt.Errorf("config: missing minSupportedClientBuildNumber")
 	}
@@ -66,6 +75,46 @@ func (c *Client) GetMinSupportedClientBuildNumbers() (map[string]int, error) {
 		out[platform] = info.MinBuildNumber
 	}
 	return out, nil
+}
+
+func sdkUnityVersion(parsed *apiConfig) (string, error) {
+	v := strings.TrimSpace(parsed.SdkUnityVersion)
+	if v == "" {
+		return "", fmt.Errorf("config: missing sdkUnityVersion")
+	}
+	return v, nil
+}
+
+func (c *Client) GetMinSupportedClientBuildNumbers() (map[string]int, error) {
+	parsed, err := c.fetchAPIConfig()
+	if err != nil {
+		return nil, err
+	}
+	return minBuildMap(parsed)
+}
+
+func (c *Client) GetSdkUnityVersion() (string, error) {
+	parsed, err := c.fetchAPIConfig()
+	if err != nil {
+		return "", err
+	}
+	return sdkUnityVersion(parsed)
+}
+
+func (c *Client) GetClientBuildConfig() (mins map[string]int, sdkUnity string, err error) {
+	parsed, err := c.fetchAPIConfig()
+	if err != nil {
+		return nil, "", err
+	}
+	mins, err = minBuildMap(parsed)
+	if err != nil {
+		return nil, "", err
+	}
+	sdkUnity, err = sdkUnityVersion(parsed)
+	if err != nil {
+		return nil, "", err
+	}
+	return mins, sdkUnity, nil
 }
 
 func MinBuildForClient(mins map[string]int, clientName string) (int, error) {

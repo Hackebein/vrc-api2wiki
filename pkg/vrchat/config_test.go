@@ -66,6 +66,7 @@ func TestGetMinSupportedClientBuildNumbers(t *testing.T) {
 				"QuestStore": map[string]any{"minBuildNumber": 1865},
 				"Default":    map[string]any{"minBuildNumber": 1860},
 			},
+			"sdkUnityVersion": "2022.3.22f1",
 		})
 	}))
 	defer srv.Close()
@@ -89,5 +90,43 @@ func TestGetMinSupportedClientBuildNumbers(t *testing.T) {
 	n, err = MinBuildForClient(mins, "android-steamos")
 	if err != nil || n != 1860 {
 		t.Fatalf("android-steamos min %d %v", n, err)
+	}
+
+	sdk, err := c.GetSdkUnityVersion()
+	if err != nil || sdk != "2022.3.22f1" {
+		t.Fatalf("sdkUnityVersion %q %v", sdk, err)
+	}
+	mins2, sdk2, err := c.GetClientBuildConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mins2["PC"] != 1865 || sdk2 != "2022.3.22f1" {
+		t.Fatalf("GetClientBuildConfig mins=%v sdk=%q", mins2, sdk2)
+	}
+	if UnitySDKClientName != "unity-sdk" {
+		t.Fatalf("UnitySDKClientName %q", UnitySDKClientName)
+	}
+}
+
+func TestGetSdkUnityVersionMissing(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"minSupportedClientBuildNumber": map[string]any{
+				"PC": map[string]any{"minBuildNumber": 1},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	prev := apiBase
+	apiBase = srv.URL
+	defer func() { apiBase = prev }()
+
+	c := NewClient(srv.Client())
+	if _, err := c.GetSdkUnityVersion(); err == nil {
+		t.Fatal("expected missing sdkUnityVersion error")
+	}
+	if _, _, err := c.GetClientBuildConfig(); err == nil {
+		t.Fatal("expected GetClientBuildConfig error when sdkUnityVersion missing")
 	}
 }
