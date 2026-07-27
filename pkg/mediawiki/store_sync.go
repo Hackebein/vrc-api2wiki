@@ -83,7 +83,7 @@ type imageSyncCache struct {
 func newImageSyncCache() *imageSyncCache {
 	return &imageSyncCache{
 		byFileID: make(map[string]string),
-		disk:     openDiskImageCache(ImageCacheDirFromEnv()),
+		disk:     openDiskImageCache(imageCacheDir),
 	}
 }
 
@@ -103,6 +103,11 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 	if err := api.EnsureAuth(auth, logger); err != nil {
 		return fmt.Errorf("vrchat auth: %w", err)
 	}
+	defer func() {
+		if err := api.PersistSession(); err != nil && logger != nil {
+			logger.Warn("persist vrchat session failed", "err", err)
+		}
+	}()
 
 	snapshotDir := filepath.Join("store-data", time.Now().UTC().Format("2006_01_02_15_04_05"))
 	if logger != nil {
@@ -123,6 +128,10 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 			logger.Info("marketplace type count", "type", k, "count", snap.TypeCounts[k])
 		}
 	}
+
+	apiSnap := openAPICache(apiCacheDir)
+	prevStore, _ := apiSnap.LoadStore()
+	shelfIcons := apiSnap.LoadShelfIcons()
 
 	now := time.Now()
 	year := now.UTC().Year()
@@ -157,9 +166,25 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 			continue
 		}
 
+		shelfUnchanged := shelfListingsUnchanged(apiSnap, prevStore, shelf, snap.Listings)
+		if shelfUnchanged {
+			iconFile := shelfIcons[wikiTitle]
+			offers = append(offers, currentOfferShelf{Title: wikiTitle, IconFile: iconFile})
+			for _, id := range listingIDs {
+				onShelf[id] = true
+			}
+			if logger != nil {
+				logger.Info("store shelf unchanged; skipped", "shelf", pathTitle)
+			}
+			continue
+		}
+
 		existingPage, _ := wiki.GetPageContent(StoreListingsPageTitle(year, wikiTitle))
 		existingCards := parseInventoryWikiIndex(existingPage)
 		existingIcon := parseShelfIconFromHeader(existingPage)
+		if existingIcon == "" {
+			existingIcon = shelfIcons[wikiTitle]
+		}
 
 		iconFile, err := syncShelfIcon(wiki, api, shelf, wikiTitle, existingIcon, images, logger)
 		if err != nil {
@@ -167,6 +192,9 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 				logger.Warn("shelf icon skipped", "shelf", pathTitle, "err", err)
 			}
 			iconFile = existingIcon
+		}
+		if iconFile != "" {
+			shelfIcons[wikiTitle] = iconFile
 		}
 
 		var cards []vrchat.InventoryContentDisplay
@@ -192,9 +220,13 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 			if old != nil {
 				preferredImage = old.Image
 			}
-			imageName, err := syncListingMedia(wiki, api, hydrated, preferredImage, images, logger)
-			if err != nil {
-				return fmt.Errorf("listing media %s: %w", id, err)
+			imageName := preferredImage
+			prevListing, hasPrev := apiSnap.LoadListing(id)
+			if !hasPrev || !apiMapsEqual(prevListing, hydrated) {
+				imageName, err = syncListingMedia(wiki, api, hydrated, preferredImage, images, logger)
+				if err != nil {
+					return fmt.Errorf("listing media %s: %w", id, err)
+				}
 			}
 			card := vrchat.ListingToDisplay(hydrated, now, imageName)
 			applyWikiCardMerge(&card, old, id)
@@ -207,8 +239,8 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 			continue
 		}
 		page := vrchat.RenderShelfWikitext(wikiTitle, iconFile, cards)
-		if err := wiki.EditPage(StoreListingsPageTitle(year, wikiTitle), page, true); err != nil {
-			return fmt.Errorf("edit shelf %s: %w", pathTitle, err)
+		if err := wiki.WritePage(StoreListingsPageTitle(year, wikiTitle), page, true); err != nil {
+			return fmt.Errorf("write shelf %s: %w", pathTitle, err)
 		}
 		offers = append(offers, currentOfferShelf{Title: wikiTitle, IconFile: iconFile})
 	}
@@ -224,6 +256,11 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 			continue
 		}
 		listing := snap.Listings[id]
+		prevListing, hasPrev := apiSnap.LoadListing(id)
+		if hasPrev && apiMapsEqual(prevListing, listing) {
+			orphanCount++
+			continue
+		}
 		if _, err := syncListingMedia(wiki, api, listing, "", images, logger); err != nil {
 			return fmt.Errorf("listing media %s: %w", id, err)
 		}
@@ -242,9 +279,13 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 			offerRows[i] = struct{ Title, IconFile string }{Title: o.Title, IconFile: o.IconFile}
 		}
 		page := vrchat.RenderCurrentOffersWikitext(year, offerRows)
-		if err := wiki.EditPage(StoreCurrentOffersPageTitle(), page, true); err != nil {
-			return fmt.Errorf("edit current offers: %w", err)
+		if err := wiki.WritePage(StoreCurrentOffersPageTitle(), page, true); err != nil {
+			return fmt.Errorf("write current offers: %w", err)
 		}
+	}
+
+	if err := persistStoreAPICache(apiSnap, snap, shelfIcons); err != nil {
+		return err
 	}
 
 	if logger != nil {
@@ -260,6 +301,55 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 			"avatarLimit", avatarLimit,
 			"year", year,
 			"snapshot", snapshotDir)
+	}
+	return nil
+}
+
+func shelfListingsUnchanged(apiSnap *apiCache, prevStore map[string]any, shelf map[string]any, listings map[string]map[string]any) bool {
+	if prevStore == nil || apiSnap == nil {
+		return false
+	}
+	apiTitle := stringField(shelf, "shelfTitle")
+	prevShelf := findShelfByTitle(prevStore, apiTitle)
+	if prevShelf == nil {
+		return false
+	}
+	if shelfIconImageID(shelf) != shelfIconImageID(prevShelf) {
+		return false
+	}
+	for _, listing := range vrchat.ShelfListings(shelf) {
+		id := stringField(listing, "id")
+		if id == "" {
+			return false
+		}
+		curr := listings[id]
+		if curr == nil {
+			curr = listing
+		}
+		prev, ok := apiSnap.LoadListing(id)
+		if !ok || !apiMapsEqual(prev, curr) {
+			return false
+		}
+	}
+	return true
+}
+
+func persistStoreAPICache(apiSnap *apiCache, snap *vrchat.StoreSnapshot, shelfIcons map[string]string) error {
+	if err := apiSnap.SaveStore(snap.Store); err != nil {
+		return fmt.Errorf("save store api cache: %w", err)
+	}
+	ids := make([]string, 0, len(snap.Listings))
+	for id := range snap.Listings {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		if err := apiSnap.SaveListing(id, snap.Listings[id]); err != nil {
+			return fmt.Errorf("save listing api cache %s: %w", id, err)
+		}
+	}
+	if err := apiSnap.SaveShelfIcons(shelfIcons); err != nil {
+		return fmt.Errorf("save shelf icons api cache: %w", err)
 	}
 	return nil
 }

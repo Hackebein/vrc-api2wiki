@@ -26,8 +26,8 @@ type Client struct {
 	httpClient *http.Client
 	userAgent  string
 
-	authMu      sync.Mutex
-	lastAuthReq time.Time
+	authMu     sync.Mutex
+	cookiePath string
 }
 
 func NewClient(httpClient *http.Client) *Client {

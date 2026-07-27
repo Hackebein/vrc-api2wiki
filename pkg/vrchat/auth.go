@@ -13,12 +13,17 @@ import (
 	"time"
 )
 
-const (
-	defaultCookiePath = ".vrchat-session/cookies.jar"
-	authRequestDelay  = 5 * time.Second
-)
+const defaultCookiePath = ".vrchat-session/cookies.jar"
 
 var apiBase = "https://api.vrchat.cloud/api/1"
+
+// authRateLimitBackoffs is used only when VRChat returns HTTP 429.
+var authRateLimitBackoffs = []time.Duration{
+	5 * time.Second,
+	15 * time.Second,
+	30 * time.Second,
+	60 * time.Second,
+}
 
 type AuthConfig struct {
 	Username   string
@@ -42,6 +47,7 @@ func (c *Client) EnsureAuth(cfg AuthConfig, logger *slog.Logger) error {
 	if cfg.CookiePath == "" {
 		cfg.CookiePath = defaultCookiePath
 	}
+	c.cookiePath = cfg.CookiePath
 	if c.httpClient.Jar == nil {
 		jar, err := NewCookieJar()
 		if err != nil {
@@ -58,7 +64,7 @@ func (c *Client) EnsureAuth(cfg AuthConfig, logger *slog.Logger) error {
 		if logger != nil {
 			logger.Info("vrchat session reused", "displayName", displayName(user))
 		}
-		return SaveNetscapeJar(c.httpClient.Jar, cfg.CookiePath)
+		return c.PersistSession()
 	}
 
 	user, err = c.login(cfg, logger)
@@ -68,7 +74,16 @@ func (c *Client) EnsureAuth(cfg AuthConfig, logger *slog.Logger) error {
 	if logger != nil {
 		logger.Info("vrchat login ok", "displayName", displayName(user))
 	}
-	return SaveNetscapeJar(c.httpClient.Jar, cfg.CookiePath)
+	return c.PersistSession()
+}
+
+// PersistSession writes the in-memory cookie jar to disk so later runs can
+// reuse the VRChat auth cookies without logging in again.
+func (c *Client) PersistSession() error {
+	if c == nil || c.cookiePath == "" || c.httpClient == nil || c.httpClient.Jar == nil {
+		return nil
+	}
+	return SaveNetscapeJar(c.httpClient.Jar, c.cookiePath)
 }
 
 func displayName(user map[string]any) string {
@@ -215,30 +230,36 @@ func truncate(s string, n int) string {
 func (c *Client) AuthedGet(rawURL string) ([]byte, error) {
 	c.authMu.Lock()
 	defer c.authMu.Unlock()
-	if !c.lastAuthReq.IsZero() {
-		if wait := authRequestDelay - time.Since(c.lastAuthReq); wait > 0 {
-			time.Sleep(wait)
+
+	var lastBody string
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+		if err != nil {
+			return nil, err
 		}
+		req.Header.Set("User-Agent", c.userAgent)
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		lastBody = string(body)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			if attempt >= len(authRateLimitBackoffs) {
+				return nil, fmt.Errorf("GET %s: HTTP 429: exhausted retries: %s", rawURL, truncate(lastBody, 300))
+			}
+			time.Sleep(authRateLimitBackoffs[attempt])
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("GET %s: HTTP %d: %s", rawURL, resp.StatusCode, truncate(lastBody, 300))
+		}
+		return body, nil
 	}
-	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", c.userAgent)
-	resp, err := c.httpClient.Do(req)
-	c.lastAuthReq = time.Now()
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: HTTP %d: %s", rawURL, resp.StatusCode, truncate(string(body), 300))
-	}
-	return body, nil
 }
 
 func (c *Client) AuthedGetJSON(rawURL string, dest any) error {

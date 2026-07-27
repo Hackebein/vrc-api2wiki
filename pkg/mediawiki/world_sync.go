@@ -109,11 +109,20 @@ func (c *MediaWikiClient) syncYouTubeThumbnail(api *vrchat.Client, world map[str
 	return nil
 }
 
-func (c *MediaWikiClient) SyncWorldData(api *vrchat.Client, worldID string, world map[string]any, cache *imageSyncCache) error {
+func (c *MediaWikiClient) SyncWorldData(api *vrchat.Client, worldID string, world map[string]any, cache *imageSyncCache, apiSnap *apiCache) error {
+	if apiSnap == nil {
+		apiSnap = openAPICache(apiCacheDir)
+	}
+	prev, _ := apiSnap.LoadWorld(worldID)
+	dirty := dirtyWorldSubpaths(prev, world)
 	pages := vrchat.FlattenWorld(world)
 	authorName := worldString(world, "authorName")
+	written := 0
 
 	for subpath, value := range pages {
+		if !dirty[subpath] {
+			continue
+		}
 		if _, isImage := imageProperties[subpath]; isImage {
 			fileRef, err := c.syncWorldImage(api, world, worldID, subpath, value, authorName, cache)
 			if err != nil {
@@ -123,22 +132,30 @@ func (c *MediaWikiClient) SyncWorldData(api *vrchat.Client, worldID string, worl
 		}
 	}
 
-	if videoID, ok := pages["previewYoutubeId"]; ok {
+	if videoID, ok := pages["previewYoutubeId"]; ok && dirty["previewYoutubeId"] {
 		if err := c.syncYouTubeThumbnail(api, world, worldID, videoID, authorName, cache); err != nil {
 			return fmt.Errorf("sync youtube thumbnail for %s: %w", worldID, err)
 		}
 	}
 
 	for subpath, value := range pages {
+		if !dirty[subpath] {
+			continue
+		}
 		title := WorldPageTitle(worldID, subpath)
 		text := SanitizeForWiki(value)
-		if err := c.EditPage(title, text, true); err != nil {
-			return fmt.Errorf("edit %s: %w", title, err)
+		if err := c.WritePage(title, text, true); err != nil {
+			return fmt.Errorf("write %s: %w", title, err)
 		}
+		written++
+	}
+
+	if err := apiSnap.SaveWorld(worldID, world); err != nil {
+		return fmt.Errorf("save world api cache %s: %w", worldID, err)
 	}
 
 	if c.logger != nil {
-		c.logger.Info("world synced", "world_id", worldID, "pages", len(pages))
+		c.logger.Info("world synced", "world_id", worldID, "pages", len(pages), "written", written, "skipped", len(pages)-written)
 	}
 	return nil
 }
@@ -234,18 +251,30 @@ func WorldAliasWikitext(worldID string, targets []string) string {
 }
 
 // EnsureWorldAliasPage keeps Community:<id> in sync with the article(s) that
-// use the world's infobox; EditPage only writes when the content differs. It
-// is a no-op when no article targets are known.
-func (c *MediaWikiClient) EnsureWorldAliasPage(worldID string, targets []string) error {
+// use the world's infobox. Skips the write when discovery targets match the
+// API snapshot cache. It is a no-op when no article targets are known.
+func (c *MediaWikiClient) EnsureWorldAliasPage(worldID string, targets []string, apiSnap *apiCache) error {
 	if len(targets) == 0 {
 		return nil
 	}
-	return c.EditPage(WorldAliasPageTitle(worldID), WorldAliasWikitext(worldID, targets), true)
+	if apiSnap == nil {
+		apiSnap = openAPICache(apiCacheDir)
+	}
+	meta, ok := apiSnap.LoadWorldMeta(worldID)
+	if ok && stringListsEqual(meta.Articles, targets) {
+		return nil
+	}
+	if err := c.WritePage(WorldAliasPageTitle(worldID), WorldAliasWikitext(worldID, targets), true); err != nil {
+		return err
+	}
+	meta.Articles = append([]string(nil), targets...)
+	return apiSnap.SaveWorldMeta(worldID, meta)
 }
 
 func RunSync(c *MediaWikiClient, api *vrchat.Client, logger *slog.Logger) error {
 	worldInfoboxes := make(map[string][]string)
 	worldArticlePages := make(map[string][]string)
+	apiSnap := openAPICache(apiCacheDir)
 
 	worldIDs := WorldIDsFromEnv()
 	if len(worldIDs) == 0 {
@@ -274,13 +303,13 @@ func RunSync(c *MediaWikiClient, api *vrchat.Client, logger *slog.Logger) error 
 	}
 
 	for _, worldID := range worldIDs {
-		if err := c.EnsureWorldMarkerPage(worldID, worldInfoboxes[worldID]); err != nil {
+		if err := c.EnsureWorldMarkerPage(worldID, worldInfoboxes[worldID], apiSnap); err != nil {
 			return fmt.Errorf("ensure marker for %s: %w", worldID, err)
 		}
 	}
 
 	for _, worldID := range worldIDs {
-		if err := c.EnsureWorldAliasPage(worldID, worldArticlePages[worldID]); err != nil {
+		if err := c.EnsureWorldAliasPage(worldID, worldArticlePages[worldID], apiSnap); err != nil {
 			return fmt.Errorf("ensure alias for %s: %w", worldID, err)
 		}
 	}
@@ -294,7 +323,7 @@ func RunSync(c *MediaWikiClient, api *vrchat.Client, logger *slog.Logger) error 
 			}
 			continue
 		}
-		if err := c.SyncWorldData(api, worldID, world, images); err != nil {
+		if err := c.SyncWorldData(api, worldID, world, images, apiSnap); err != nil {
 			return fmt.Errorf("sync world %s: %w", worldID, err)
 		}
 	}

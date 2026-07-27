@@ -438,7 +438,6 @@ func (c *MediaWikiClient) PageExists(title string) (bool, error) {
 
 func (c *MediaWikiClient) EditPage(title, text string, bot bool) error {
 	trimmedNew := strings.TrimSpace(text)
-	pageMissing := false
 	currentContent, err := c.getPageContent(title)
 	if err != nil {
 		msg := err.Error()
@@ -447,16 +446,19 @@ func (c *MediaWikiClient) EditPage(title, text string, bot bool) error {
 			!strings.Contains(msg, "could not extract content from page") {
 			return fmt.Errorf("get current content for page %s: %w", title, err)
 		}
-		pageMissing = true
-	} else {
-		if strings.TrimSpace(currentContent) == trimmedNew {
-			if c.offline && c.logger != nil {
-				c.logger.Info("offline: skip page (unchanged on wiki)", "title", title)
-			}
-			return nil
+	} else if strings.TrimSpace(currentContent) == trimmedNew {
+		if c.offline && c.logger != nil {
+			c.logger.Info("offline: skip page (unchanged on wiki)", "title", title)
 		}
+		return nil
 	}
+	return c.WritePage(title, text, bot)
+}
 
+// WritePage writes title without reading the current wiki page first.
+// Callers that already know the content changed (API snapshot diff) should use this.
+func (c *MediaWikiClient) WritePage(title, text string, bot bool) error {
+	trimmedNew := strings.TrimSpace(text)
 	summary := BuildEditSummary(title, trimmedNew)
 
 	if c.offline {
@@ -468,11 +470,7 @@ func (c *MediaWikiClient) EditPage(title, text string, bot bool) error {
 			return fmt.Errorf("write file: %w", err)
 		}
 		if c.logger != nil {
-			if pageMissing {
-				c.logger.Info("offline: would create page", "title", title, "file", path, "bytes", len(text))
-			} else {
-				c.logger.Info("offline: would edit page (content changed)", "title", title, "file", path, "bytes", len(text))
-			}
+			c.logger.Info("offline: would write page", "title", title, "file", path, "bytes", len(text))
 		}
 		return nil
 	}

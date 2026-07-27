@@ -47,6 +47,11 @@ func main() {
 		if err := apiClient.EnsureAuth(auth, logger); err != nil {
 			stdLogger.Fatalf("vrchat auth: %v", err)
 		}
+		defer func() {
+			if err := apiClient.PersistSession(); err != nil {
+				stdLogger.Printf("persist vrchat session: %v", err)
+			}
+		}()
 	}
 
 	stdLogger.Println("running world sync")

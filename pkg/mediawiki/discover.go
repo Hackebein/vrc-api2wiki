@@ -270,8 +270,24 @@ func (c *MediaWikiClient) DiscoverWorldIDs() ([]string, error) {
 }
 
 // EnsureWorldMarkerPage keeps Template:World/<id> in sync with the expected
-// id-only infobox call(s); EditPage only writes when the content differs.
-func (c *MediaWikiClient) EnsureWorldMarkerPage(worldID string, infoboxes []string) error {
+// id-only infobox call(s). Skips the write when discovery inputs match the
+// API snapshot cache.
+func (c *MediaWikiClient) EnsureWorldMarkerPage(worldID string, infoboxes []string, apiSnap *apiCache) error {
+	if apiSnap == nil {
+		apiSnap = openAPICache(apiCacheDir)
+	}
+	expected := infoboxes
+	if len(expected) == 0 {
+		expected = []string{"Infobox/World"}
+	}
+	meta, ok := apiSnap.LoadWorldMeta(worldID)
+	if ok && stringListsEqual(meta.Infoboxes, expected) {
+		return nil
+	}
 	title := WorldPageTitle(worldID, "")
-	return c.EditPage(title, WorldMarkerWikitext(worldID, infoboxes), true)
+	if err := c.WritePage(title, WorldMarkerWikitext(worldID, infoboxes), true); err != nil {
+		return err
+	}
+	meta.Infoboxes = append([]string(nil), expected...)
+	return apiSnap.SaveWorldMeta(worldID, meta)
 }

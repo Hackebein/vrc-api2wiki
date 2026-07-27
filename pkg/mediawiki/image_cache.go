@@ -9,9 +9,7 @@ import (
 	"strings"
 )
 
-func ImageCacheDirFromEnv() string {
-	return strings.TrimSpace(os.Getenv("VRC_API2WIKI_IMAGE_CACHE"))
-}
+const imageCacheDir = ".image-cache"
 
 type diskImageCache struct {
 	dir string
