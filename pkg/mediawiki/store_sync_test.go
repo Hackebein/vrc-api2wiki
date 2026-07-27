@@ -47,14 +47,14 @@ func TestDisplayShelfTitleStripsMinVersion(t *testing.T) {
 }
 
 func TestListingImageFileDescriptionUsesWorldLicense(t *testing.T) {
-	got := ListingImageFileDescription("Vega’s Tiara", "prod_abc")
+	got := ListingImageFileDescription("Vega’s Tiara", "prod_abc", "file_aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee@1")
 	for _, want := range []string{
 		"== Summary ==",
 		"{{File information",
 		"|description = Store listing image for Vega’s Tiara.",
 		"|source      = VRChat API",
 		"|author      = VRChat",
-		"|additional_information = prod_abc",
+		"|additional_information = prod_abc file_aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee@1",
 		"== Licensing ==",
 		"{{license VRC public section8}}",
 	} {

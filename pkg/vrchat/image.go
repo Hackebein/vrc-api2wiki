@@ -8,8 +8,16 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"strings"
 )
+
+var fileIDPattern = regexp.MustCompile(`file_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
+
+// FileIDFromURL extracts a VRChat file_… UUID from an API or CDN URL.
+func FileIDFromURL(rawURL string) string {
+	return fileIDPattern.FindString(rawURL)
+}
 
 // ErrNotFound is returned by DownloadImage when the server answers 404.
 var ErrNotFound = errors.New("image not found")

@@ -85,14 +85,22 @@ func worldDateFromMap(world map[string]any) string {
 }
 
 // WorldImageURLFileDescription builds the File: page wikitext for a mirrored
-// world preview image (imageUrl).
-func WorldImageURLFileDescription(worldID, authorName, date string) string {
+// world preview image (imageUrl). sourceRef is typically fileID@version.
+func WorldImageURLFileDescription(worldID, authorName, date, sourceRef string) string {
+	additional := strings.TrimSpace(worldID)
+	if ref := strings.TrimSpace(sourceRef); ref != "" {
+		if additional != "" {
+			additional = additional + " " + ref
+		} else {
+			additional = ref
+		}
+	}
 	return fileDescriptionPage(fileInformationParams{
 		description:           worldLinkDescription("World preview image", worldID),
 		source:                "VRChat API",
 		date:                  strings.TrimSpace(date),
 		author:                strings.TrimSpace(authorName),
-		additionalInformation: strings.TrimSpace(worldID),
+		additionalInformation: additional,
 	}, "{{license VRC public section8}}")
 }
 

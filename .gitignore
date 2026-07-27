@@ -1,6 +1,7 @@
 wiki-output/
 store-data/
 steam-output/
+.image-cache/
 .vrchat-session/
 third_party/DepotDownloader/DepotDownloader
 third_party/DepotDownloader/DepotDownloader.exe

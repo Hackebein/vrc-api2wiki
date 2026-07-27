@@ -10,6 +10,7 @@ func TestWorldImageURLFileDescription(t *testing.T) {
 		"wrld_b2d24c29-1ded-4990-a90d-dd6dcc440300",
 		"RootGentle",
 		"July 3, 2026",
+		"file_aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee@3",
 	)
 	for _, want := range []string{
 		"== Summary ==",
@@ -20,7 +21,7 @@ func TestWorldImageURLFileDescription(t *testing.T) {
 		"|author      = RootGentle",
 		"|permission  = ",
 		"|other_versions = ",
-		"|additional_information = wrld_b2d24c29-1ded-4990-a90d-dd6dcc440300",
+		"|additional_information = wrld_b2d24c29-1ded-4990-a90d-dd6dcc440300 file_aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee@3",
 		"== Licensing ==",
 		"{{license VRC public section8}}",
 	} {
@@ -31,7 +32,7 @@ func TestWorldImageURLFileDescription(t *testing.T) {
 }
 
 func TestWorldImageURLFileDescriptionNoAuthor(t *testing.T) {
-	got := WorldImageURLFileDescription("wrld_00000000-0000-4000-8000-000000000001", "", "")
+	got := WorldImageURLFileDescription("wrld_00000000-0000-4000-8000-000000000001", "", "", "")
 	if strings.Contains(got, "RootGentle") {
 		t.Fatalf("expected no author, got:\n%s", got)
 	}

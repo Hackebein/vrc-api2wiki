@@ -49,21 +49,42 @@ func storeShelfPathSegment(title string) string {
 	return strings.Join(strings.Fields(b.String()), " ")
 }
 
-func ListingImageFileDescription(listingName, productID string) string {
+func ListingImageFileDescription(listingName, productID, sourceRef string) string {
+	additional := strings.TrimSpace(productID)
+	if ref := strings.TrimSpace(sourceRef); ref != "" {
+		if additional != "" {
+			additional = additional + " " + ref
+		} else {
+			additional = ref
+		}
+	}
 	return fileDescriptionPage(fileInformationParams{
 		description:           fmt.Sprintf("Store listing image for %s.", listingName),
 		source:                "VRChat API",
 		author:                "VRChat",
-		additionalInformation: strings.TrimSpace(productID),
+		additionalInformation: additional,
 	}, "{{license VRC public section8}}")
 }
 
-func ShelfIconFileDescription(shelfTitle string) string {
+func ShelfIconFileDescription(shelfTitle, sourceRef string) string {
 	return fileDescriptionPage(fileInformationParams{
-		description: fmt.Sprintf("Store shelf icon for %s.", vrchat.DisplayShelfTitle(shelfTitle)),
-		source:      "VRChat API",
-		author:      "VRChat",
+		description:           fmt.Sprintf("Store shelf icon for %s.", vrchat.DisplayShelfTitle(shelfTitle)),
+		source:                "VRChat API",
+		author:                "VRChat",
+		additionalInformation: strings.TrimSpace(sourceRef),
 	}, "{{license VRC public section8}}")
+}
+
+type imageSyncCache struct {
+	byFileID map[string]string
+	disk     *diskImageCache
+}
+
+func newImageSyncCache() *imageSyncCache {
+	return &imageSyncCache{
+		byFileID: make(map[string]string),
+		disk:     openDiskImageCache(ImageCacheDirFromEnv()),
+	}
 }
 
 type currentOfferShelf struct {
@@ -109,6 +130,7 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 	var offers []currentOfferShelf
 
 	wikiShelves := loadWikiShelfIndex(wiki, year, logger)
+	images := newImageSyncCache()
 
 	for _, shelf := range vrchat.StoreShelves(snap.Store) {
 		apiTitle := stringField(shelf, "shelfTitle")
@@ -139,7 +161,7 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 		existingCards := parseInventoryWikiIndex(existingPage)
 		existingIcon := parseShelfIconFromHeader(existingPage)
 
-		iconFile, err := syncShelfIcon(wiki, api, shelf, wikiTitle, existingIcon, logger)
+		iconFile, err := syncShelfIcon(wiki, api, shelf, wikiTitle, existingIcon, images, logger)
 		if err != nil {
 			if logger != nil {
 				logger.Warn("shelf icon skipped", "shelf", pathTitle, "err", err)
@@ -170,7 +192,7 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 			if old != nil {
 				preferredImage = old.Image
 			}
-			imageName, err := syncListingMedia(wiki, api, hydrated, preferredImage, logger)
+			imageName, err := syncListingMedia(wiki, api, hydrated, preferredImage, images, logger)
 			if err != nil {
 				return fmt.Errorf("listing media %s: %w", id, err)
 			}
@@ -202,13 +224,13 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 			continue
 		}
 		listing := snap.Listings[id]
-		if _, err := syncListingMedia(wiki, api, listing, "", logger); err != nil {
+		if _, err := syncListingMedia(wiki, api, listing, "", images, logger); err != nil {
 			return fmt.Errorf("listing media %s: %w", id, err)
 		}
 		orphanCount++
 	}
 
-	avatarImages, avatarListings, avatarStyles, avatarAuthors, err := syncAvatarMarketplacePages(wiki, api, snap.Avatars, year, now, logger)
+	avatarImages, avatarListings, avatarStyles, avatarAuthors, err := syncAvatarMarketplacePages(wiki, api, snap.Avatars, year, now, images, logger)
 	if err != nil {
 		return err
 	}
@@ -242,20 +264,20 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 	return nil
 }
 
-func syncAvatarMarketplacePages(wiki *MediaWikiClient, api *vrchat.Client, avatars []map[string]any, year int, now time.Time, logger *slog.Logger) (images, listings, styles, authors int, err error) {
+func syncAvatarMarketplacePages(wiki *MediaWikiClient, api *vrchat.Client, avatars []map[string]any, year int, now time.Time, cache *imageSyncCache, logger *slog.Logger) (imageCount, listings, styles, authors int, err error) {
 	built := vrchat.BuildAvatarMarketplaceListings(avatars, now)
 	byStyle := map[string][]vrchat.InventoryContentDisplay{}
 	byAuthor := map[string][]vrchat.InventoryContentDisplay{}
 
 	for _, listing := range built {
-		filename, err := syncAvatarListingImage(wiki, api, listing, logger)
+		filename, err := syncAvatarListingImage(wiki, api, listing, cache, logger)
 		if err != nil {
 			if logger != nil {
 				logger.Warn("avatar listing image skipped", "listing", listing.ListingID, "err", err)
 			}
 			continue
 		}
-		images++
+		imageCount++
 		card := listing.Display
 		card.Image = filename
 		byStyle[listing.Style] = append(byStyle[listing.Style], card)
@@ -279,7 +301,7 @@ func syncAvatarMarketplacePages(wiki *MediaWikiClient, api *vrchat.Client, avata
 		})
 		page := vrchat.RenderShelfWikitext(style, "", cards)
 		if err := wiki.EditPage(StoreAvatarStylePageTitle(year, style), page, true); err != nil {
-			return images, listings, 0, 0, fmt.Errorf("edit avatar style %s: %w", style, err)
+			return imageCount, listings, 0, 0, fmt.Errorf("edit avatar style %s: %w", style, err)
 		}
 	}
 
@@ -295,33 +317,35 @@ func syncAvatarMarketplacePages(wiki *MediaWikiClient, api *vrchat.Client, avata
 		})
 		page := vrchat.RenderShelfWikitext(author, "", cards)
 		if err := wiki.EditPage(StoreAvatarAuthorPageTitle(year, author), page, true); err != nil {
-			return images, listings, len(styleNames), 0, fmt.Errorf("edit avatar author %s: %w", author, err)
+			return imageCount, listings, len(styleNames), 0, fmt.Errorf("edit avatar author %s: %w", author, err)
 		}
 	}
 
 	if len(styleNames) > 0 || len(authorNames) > 0 {
 		index := vrchat.RenderAvatarStylesIndexWikitext(year, styleNames)
 		if err := wiki.EditPage(StoreAvatarStylesIndexPageTitle(year), index, true); err != nil {
-			return images, listings, len(styleNames), len(authorNames), fmt.Errorf("edit avatar styles index: %w", err)
+			return imageCount, listings, len(styleNames), len(authorNames), fmt.Errorf("edit avatar styles index: %w", err)
 		}
 	}
 	if len(authorNames) > 0 {
 		authorsIndex := vrchat.RenderAvatarAuthorsIndexWikitext(year, authorNames)
 		if err := wiki.EditPage(StoreAvatarAuthorsIndexPageTitle(year), authorsIndex, true); err != nil {
-			return images, listings, len(styleNames), len(authorNames), fmt.Errorf("edit avatar authors index: %w", err)
+			return imageCount, listings, len(styleNames), len(authorNames), fmt.Errorf("edit avatar authors index: %w", err)
 		}
 	}
-	return images, listings, len(styleNames), len(authorNames), nil
+	return imageCount, listings, len(styleNames), len(authorNames), nil
 }
 
-func syncAvatarListingImage(wiki *MediaWikiClient, api *vrchat.Client, listing vrchat.AvatarMarketplaceListing, logger *slog.Logger) (string, error) {
+func syncAvatarListingImage(wiki *MediaWikiClient, api *vrchat.Client, listing vrchat.AvatarMarketplaceListing, cache *imageSyncCache, logger *slog.Logger) (string, error) {
 	name := listing.Display.Name
 	if listing.ImageID != "" {
 		return uploadNamedFile(wiki, api, listing.ImageID, func(ext string) string {
 			return vrchat.ListingImageFilename(name, ext)
-		}, name, listing.ListingID, logger)
+		}, func(sourceRef string) string {
+			return ListingImageFileDescription(name, listing.ListingID, sourceRef)
+		}, cache, logger)
 	}
-	return syncAvatarImage(wiki, api, listing.FallbackAvatar, logger)
+	return syncAvatarImage(wiki, api, listing.FallbackAvatar, cache, logger)
 }
 
 type wikiShelfInfo struct {
@@ -397,34 +421,26 @@ func resolveWikiShelfTitle(apiTitle string, listingIDs []string, wikiShelves []w
 	return display
 }
 
-func syncShelfIcon(wiki *MediaWikiClient, api *vrchat.Client, shelf map[string]any, wikiTitle, existingIcon string, logger *slog.Logger) (string, error) {
+func syncShelfIcon(wiki *MediaWikiClient, api *vrchat.Client, shelf map[string]any, wikiTitle, existingIcon string, cache *imageSyncCache, logger *slog.Logger) (string, error) {
 	fileID := stringField(shelf, "shelfIconImageId")
 	if fileID == "" {
 		return existingIcon, nil
 	}
-	data, ext, err := api.DownloadFileBytes(fileID)
+	filename, err := uploadNamedFile(wiki, api, fileID, func(ext string) string {
+		if existingIcon != "" {
+			return existingIcon
+		}
+		return vrchat.ShelfIconFilename(wikiTitle, ext)
+	}, func(sourceRef string) string {
+		return ShelfIconFileDescription(wikiTitle, sourceRef)
+	}, cache, logger)
 	if err != nil {
 		return existingIcon, err
-	}
-	if ext == "" {
-		ext = "png"
-	}
-	filename := vrchat.ShelfIconFilename(wikiTitle, ext)
-	if existingIcon != "" {
-		filename = existingIcon
-	}
-	desc := ShelfIconFileDescription(wikiTitle)
-	uploaded, err := wiki.UploadFile(filename, data, desc)
-	if err != nil {
-		return "", err
-	}
-	if logger != nil {
-		logger.Info("shelf icon processed", "filename", filename, "uploaded", uploaded)
 	}
 	return filename, nil
 }
 
-func syncListingMedia(wiki *MediaWikiClient, api *vrchat.Client, listing map[string]any, preferredListingImage string, logger *slog.Logger) (string, error) {
+func syncListingMedia(wiki *MediaWikiClient, api *vrchat.Client, listing map[string]any, preferredListingImage string, cache *imageSyncCache, logger *slog.Logger) (string, error) {
 	name := strings.TrimSpace(stringField(listing, "displayName"))
 	productID := stringField(listing, "id")
 	var listingImage string
@@ -435,7 +451,9 @@ func syncListingMedia(wiki *MediaWikiClient, api *vrchat.Client, listing map[str
 				return preferredListingImage
 			}
 			return vrchat.ListingImageFilename(name, ext)
-		}, name, productID, logger)
+		}, func(sourceRef string) string {
+			return ListingImageFileDescription(name, productID, sourceRef)
+		}, cache, logger)
 		if err != nil {
 			return "", err
 		}
@@ -454,9 +472,12 @@ func syncListingMedia(wiki *MediaWikiClient, api *vrchat.Client, listing map[str
 			pname = name
 		}
 		label := stringField(prod, "productTypeLabel")
+		prodID := stringField(prod, "id")
 		if _, err := uploadNamedFile(wiki, api, pid, func(ext string) string {
 			return vrchat.ProductImageFilename(label, pname, ext)
-		}, pname, stringField(prod, "id"), logger); err != nil {
+		}, func(sourceRef string) string {
+			return ListingImageFileDescription(pname, prodID, sourceRef)
+		}, cache, logger); err != nil {
 			if logger != nil {
 				logger.Warn("product image skipped", "product", pname, "err", err)
 			}
@@ -487,7 +508,9 @@ func syncListingMedia(wiki *MediaWikiClient, api *vrchat.Client, listing map[str
 				return entryName + "." + ext
 			}
 			return gid + "." + ext
-		}, name, productID, logger); err != nil {
+		}, func(sourceRef string) string {
+			return ListingImageFileDescription(name, productID, sourceRef)
+		}, cache, logger); err != nil {
 			if logger != nil {
 				logger.Warn("gallery file skipped", "file", gid, "err", err)
 			}
@@ -496,27 +519,89 @@ func syncListingMedia(wiki *MediaWikiClient, api *vrchat.Client, listing map[str
 	return listingImage, nil
 }
 
-func uploadNamedFile(wiki *MediaWikiClient, api *vrchat.Client, fileID string, nameFn func(ext string) string, displayName, productID string, logger *slog.Logger) (string, error) {
-	data, ext, err := api.DownloadFileBytes(fileID)
+func uploadNamedFile(wiki *MediaWikiClient, api *vrchat.Client, fileID string, nameFn func(ext string) string, descFn func(sourceRef string) string, cache *imageSyncCache, logger *slog.Logger) (string, error) {
+	if cache != nil {
+		if name, ok := cache.byFileID[fileID]; ok {
+			return name, nil
+		}
+	}
+
+	info, err := api.GetFileDownload(fileID)
 	if err != nil {
 		return "", err
 	}
+	ext := info.Ext
 	if ext == "" {
 		ext = "png"
 	}
 	filename := nameFn(ext)
-	desc := ListingImageFileDescription(displayName, productID)
-	uploaded, err := wiki.UploadFile(filename, data, desc)
+	sourceRef := FileSourceRef(fileID, info.Version)
+	desc := descFn(sourceRef)
+
+	uploaded, skippedDownload, err := syncFileBytes(wiki, filename, sourceRef, desc, cache, func() ([]byte, error) {
+		data, _, err := api.DownloadImage(info.URL)
+		if err != nil {
+			data, _, err = api.DownloadFileBytes(fileID)
+		}
+		return data, err
+	}, logger)
 	if err != nil {
 		return "", err
 	}
+	if cache != nil {
+		cache.byFileID[fileID] = filename
+	}
 	if logger != nil {
-		logger.Info("store image processed", "filename", filename, "uploaded", uploaded)
+		logger.Info("store image processed", "filename", filename, "uploaded", uploaded, "skipped_download", skippedDownload)
 	}
 	return filename, nil
 }
 
-func syncAvatarImage(wiki *MediaWikiClient, api *vrchat.Client, av map[string]any, logger *slog.Logger) (string, error) {
+// syncFileBytes uploads filename from disk cache or downloadFn. Replacements
+// are detected because sourceRef includes fileID@version (or yt:<id>); a new
+// ref misses the disk cache and fails the wiki sourceRef check.
+func syncFileBytes(wiki *MediaWikiClient, filename, sourceRef, desc string, cache *imageSyncCache, downloadFn func() ([]byte, error), logger *slog.Logger) (uploaded, skippedDownload bool, err error) {
+	var disk *diskImageCache
+	if cache != nil {
+		disk = cache.disk
+	}
+
+	st, err := wiki.getFileState(filename)
+	if err != nil {
+		return false, false, err
+	}
+
+	if data, sha, ok := disk.Get(sourceRef); ok {
+		if st.exists && st.sha1 != "" && strings.EqualFold(st.sha1, sha) {
+			if sourceRef != "" && !strings.Contains(st.content, sourceRef) {
+				if err := wiki.ensureFileDescription(filename, desc); err != nil {
+					return false, false, err
+				}
+			}
+			return false, true, nil
+		}
+		uploaded, err = wiki.UploadFile(filename, data, desc)
+		return uploaded, true, err
+	}
+
+	if st.exists && st.sha1 != "" {
+		if sourceRef == "" || strings.Contains(st.content, sourceRef) {
+			return false, true, nil
+		}
+	}
+
+	data, err := downloadFn()
+	if err != nil {
+		return false, false, err
+	}
+	if err := disk.Put(sourceRef, data); err != nil && logger != nil {
+		logger.Warn("image cache write failed", "ref", sourceRef, "err", err)
+	}
+	uploaded, err = wiki.UploadFile(filename, data, desc)
+	return uploaded, false, err
+}
+
+func syncAvatarImage(wiki *MediaWikiClient, api *vrchat.Client, av map[string]any, cache *imageSyncCache, logger *slog.Logger) (string, error) {
 	imageURL := stringField(av, "imageUrl")
 	if imageURL == "" {
 		imageURL = stringField(av, "thumbnailImageUrl")
@@ -528,21 +613,19 @@ func syncAvatarImage(wiki *MediaWikiClient, api *vrchat.Client, av map[string]an
 	if imageURL == "" {
 		return vrchat.ListingImageFilename(name, "png"), nil
 	}
+	if fid := vrchat.FileIDFromURL(imageURL); fid != "" {
+		return uploadNamedFile(wiki, api, fid, func(ext string) string {
+			return vrchat.ListingImageFilename(name, ext)
+		}, func(sourceRef string) string {
+			return ListingImageFileDescription(name, stringField(av, "id"), sourceRef)
+		}, cache, logger)
+	}
 	data, ext, err := api.DownloadImage(imageURL)
 	if err != nil {
-		if idx := strings.Index(imageURL, "file_"); idx >= 0 {
-			fid := imageURL[idx:]
-			if len(fid) > 41 {
-				fid = fid[:41]
-			}
-			data, ext, err = api.DownloadFileBytes(fid)
-		}
-		if err != nil {
-			return "", err
-		}
+		return "", err
 	}
 	filename := vrchat.ListingImageFilename(name, ext)
-	desc := ListingImageFileDescription(name, stringField(av, "id"))
+	desc := ListingImageFileDescription(name, stringField(av, "id"), "")
 	uploaded, err := wiki.UploadFile(filename, data, desc)
 	if err != nil {
 		return "", err

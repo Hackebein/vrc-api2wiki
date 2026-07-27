@@ -39,6 +39,14 @@ jobs:
           path: .vrchat-session/cookies.jar
           key: vrchat-api2wiki-session-v1
 
+      - name: Restore image cache
+        uses: actions/cache@v4
+        with:
+          path: .image-cache
+          key: vrchat-api2wiki-images-v1-${{ github.run_id }}
+          restore-keys: |
+            vrchat-api2wiki-images-v1-
+
       - name: Run sync
         env:
           VRCWIKI_API_URL: ${{ secrets.VRCWIKI_API_URL }}
@@ -52,4 +60,5 @@ jobs:
           STEAM_USERNAME: ${{ secrets.STEAM_USERNAME }}
           STEAM_PASSWORD: ${{ secrets.STEAM_PASSWORD }}
           STEAM_SHARED_SECRET: ${{ secrets.STEAM_SHARED_SECRET }}
+          VRC_API2WIKI_IMAGE_CACHE: .image-cache
         run: go run ./cmd/vrc-api2wiki

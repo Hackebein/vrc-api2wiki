@@ -43,6 +43,11 @@ func main() {
 	}
 
 	apiClient := vrchat.NewClient(httpClient)
+	if auth, ok := vrchat.AuthConfigFromEnv(); ok {
+		if err := apiClient.EnsureAuth(auth, logger); err != nil {
+			stdLogger.Fatalf("vrchat auth: %v", err)
+		}
+	}
 
 	stdLogger.Println("running world sync")
 	if err := mediawiki.RunSync(wikiClient, apiClient, logger); err != nil {

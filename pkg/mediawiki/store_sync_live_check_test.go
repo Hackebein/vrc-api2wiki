@@ -78,7 +78,7 @@ func TestLiveShelfParity(t *testing.T) {
 			if old, ok := existingFields[id]; ok {
 				preferred = old.Image
 			}
-			imageName, err := syncListingMedia(offlineWiki, api, hydrated, preferred, nil)
+			imageName, err := syncListingMedia(offlineWiki, api, hydrated, preferred, newImageSyncCache(), nil)
 			if err != nil { t.Fatal(err) }
 			card := vrchat.ListingToDisplay(hydrated, now, imageName)
 			if old, ok := existingFields[id]; ok {

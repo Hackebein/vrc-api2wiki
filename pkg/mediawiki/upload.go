@@ -12,6 +12,75 @@ import (
 	"strings"
 )
 
+// FileSourceRef builds the fingerprint stored in File: page additional_information
+// so later syncs can skip CDN downloads when the wiki already mirrors this
+// VRChat file version.
+func FileSourceRef(fileID string, version int) string {
+	fileID = strings.TrimSpace(fileID)
+	if fileID == "" {
+		return ""
+	}
+	if version > 0 {
+		return fmt.Sprintf("%s@%d", fileID, version)
+	}
+	return fileID
+}
+
+type fileState struct {
+	exists  bool
+	sha1    string
+	content string
+}
+
+func (c *MediaWikiClient) getFileState(filename string) (fileState, error) {
+	params := map[string]string{
+		"action":  "query",
+		"titles":  "File:" + filename,
+		"prop":    "imageinfo|revisions",
+		"iiprop":  "sha1",
+		"rvprop":  "content",
+		"rvslots": "main",
+	}
+	result, err := c.apiRequest(params)
+	if err != nil {
+		return fileState{}, fmt.Errorf("get file state for %s: %w", filename, err)
+	}
+	query, ok := result["query"].(map[string]any)
+	if !ok {
+		return fileState{}, fmt.Errorf("invalid response structure: missing query")
+	}
+	pages, ok := query["pages"].(map[string]any)
+	if !ok {
+		return fileState{}, fmt.Errorf("invalid response structure: missing pages")
+	}
+	for _, page := range pages {
+		pageMap, _ := page.(map[string]any)
+		if pageMap == nil {
+			continue
+		}
+		if _, missing := pageMap["missing"]; missing {
+			return fileState{}, nil
+		}
+		st := fileState{exists: true}
+		if imageinfo, _ := pageMap["imageinfo"].([]any); len(imageinfo) > 0 {
+			if info, _ := imageinfo[0].(map[string]any); info != nil {
+				st.sha1, _ = info["sha1"].(string)
+			}
+		}
+		if revisions, _ := pageMap["revisions"].([]any); len(revisions) > 0 {
+			if rev, _ := revisions[0].(map[string]any); rev != nil {
+				if slots, _ := rev["slots"].(map[string]any); slots != nil {
+					if main, _ := slots["main"].(map[string]any); main != nil {
+						st.content, _ = main["*"].(string)
+					}
+				}
+			}
+		}
+		return st, nil
+	}
+	return fileState{}, nil
+}
+
 // apiUploadRequest performs a multipart/form-data POST against the MediaWiki
 // API, reusing the same User-Agent, CF-bypass header, and cookie jar as
 // apiRequest.
