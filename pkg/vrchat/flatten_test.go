@@ -1,6 +1,9 @@
 package vrchat
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestFlattenWorld(t *testing.T) {
 	world := map[string]any{
@@ -44,17 +47,16 @@ func TestFlattenWorld(t *testing.T) {
 	if pages["platforms"] != "PC, Android" {
 		t.Fatalf("unexpected platforms: %q", pages["platforms"])
 	}
-	if pages["unityPackages/standalonewindows/created_at"] != "2018-03-17T08:58:42.296Z" {
-		t.Fatalf("unexpected unity package created_at: %q", pages["unityPackages/standalonewindows/created_at"])
+	for key := range pages {
+		if strings.HasPrefix(key, "unityPackages/") {
+			t.Fatalf("unityPackages pages must not be synced, got %q", key)
+		}
 	}
 	if pages["defaultContentSettings/stickers"] != "false" {
 		t.Fatalf("unexpected stickers setting: %q", pages["defaultContentSettings/stickers"])
 	}
 	if _, ok := pages["instances"]; ok {
 		t.Fatal("instances should be excluded")
-	}
-	if _, ok := pages["unityPackages/standalonewindows/assetUrlObject"]; ok {
-		t.Fatal("assetUrlObject should be excluded")
 	}
 }
 
@@ -91,8 +93,10 @@ func TestFlattenWorldObjectKeyedUnityPackages(t *testing.T) {
 	}
 
 	pages := FlattenWorld(world)
-	if pages["unityPackages/standalonewindows/fileSize"] != "999" {
-		t.Fatalf("unexpected fileSize: %q", pages["unityPackages/standalonewindows/fileSize"])
+	for key := range pages {
+		if strings.HasPrefix(key, "unityPackages/") {
+			t.Fatalf("unityPackages pages must not be synced, got %q", key)
+		}
 	}
 	if pages["platforms"] != "Android, PC" {
 		t.Fatalf("unexpected platforms: %q", pages["platforms"])

@@ -11,6 +11,7 @@ import (
 var excludedKeys = map[string]struct{}{
 	"instances":             {},
 	"slimInstances":         {},
+	"unityPackages":         {},
 	"unityPackageUrl":       {},
 	"unityPackageUrlObject": {},
 	"assetUrlObject":        {},

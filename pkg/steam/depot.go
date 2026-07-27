@@ -70,6 +70,13 @@ func DownloadAndroidDepot(ddPath, outDir, username, password, sharedSecret strin
 	})
 }
 
+// SessionHome returns the HOME used for DepotDownloader so Steam refresh
+// tokens land in <repo>/.steam-session (gitignored; cached in CI).
+func SessionHome(ddPath string) string {
+	root := filepath.Clean(filepath.Join(filepath.Dir(ddPath), "..", ".."))
+	return filepath.Join(root, ".steam-session")
+}
+
 func DownloadDepot(ddPath, depotID, branch, outDir, username, password, sharedSecret string, filelistLines []string) (manifestID string, steamBuildID string, err error) {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return "", "", err
@@ -79,9 +86,30 @@ func DownloadDepot(ddPath, depotID, branch, outDir, username, password, sharedSe
 		return "", "", err
 	}
 
+	manifestID, steamBuildID, out, runErr := runDepotDownloader(ddPath, depotID, branch, outDir, filelist, username, password, sharedSecret)
+	// Stale -remember-password tokens are cleared by DepotDownloader on reject;
+	// one retry falls back to password + Steam Guard.
+	if runErr != nil && strings.Contains(out, "Access token was rejected") {
+		manifestID, steamBuildID, out, runErr = runDepotDownloader(ddPath, depotID, branch, outDir, filelist, username, password, sharedSecret)
+	}
+	if runErr != nil {
+		hint := ""
+		if strings.Contains(out, "STEAM GUARD") || strings.Contains(out, "No code was provided") {
+			hint = "\nHint: set STEAM_SHARED_SECRET to the mobile authenticator shared_secret (base64)."
+		}
+		label := depotID
+		if branch != "" {
+			label = branch + "/" + depotID
+		}
+		return manifestID, steamBuildID, fmt.Errorf("DepotDownloader %s: %w\n%s%s", label, runErr, truncate(out, 2000), hint)
+	}
+	return manifestID, steamBuildID, nil
+}
+
+func runDepotDownloader(ddPath, depotID, branch, outDir, filelist, username, password, sharedSecret string) (manifestID, steamBuildID, out string, err error) {
 	code, err := GenerateSteamGuardCode(sharedSecret, time.Now())
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
 	args := []string{
@@ -102,30 +130,40 @@ func DownloadDepot(ddPath, depotID, branch, outDir, username, password, sharedSe
 		}
 	}
 
+	home := SessionHome(ddPath)
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		return "", "", "", fmt.Errorf("steam session home: %w", err)
+	}
+
 	cmd := exec.Command(ddPath, args...)
 	cmd.Dir = filepath.Dir(ddPath)
-	cmd.Env = os.Environ()
+	cmd.Env = envWithHome(home)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	cmd.Stdin = strings.NewReader(code + "\n")
 
 	runErr := cmd.Run()
-	out := stdout.String() + stderr.String()
+	out = stdout.String() + stderr.String()
 	manifestID = firstMatch(out, regexp.MustCompile(`(?i)manifest[:\s]+(\d+)`))
 	steamBuildID = firstMatch(out, regexp.MustCompile(`(?i)build(?:id)?[:\s]+(\d+)`))
-	if runErr != nil {
-		hint := ""
-		if strings.Contains(out, "STEAM GUARD") || strings.Contains(out, "No code was provided") {
-			hint = "\nHint: set STEAM_SHARED_SECRET to the mobile authenticator shared_secret (base64)."
-		}
-		label := depotID
-		if branch != "" {
-			label = branch + "/" + depotID
-		}
-		return manifestID, steamBuildID, fmt.Errorf("DepotDownloader %s: %w\n%s%s", label, runErr, truncate(out, 2000), hint)
+	return manifestID, steamBuildID, out, runErr
+}
+
+func envWithHome(home string) []string {
+	out := []string{"HOME=" + home}
+	if runtime.GOOS == "windows" {
+		out = append(out, "USERPROFILE="+home)
 	}
-	return manifestID, steamBuildID, nil
+	for _, e := range os.Environ() {
+		switch {
+		case strings.HasPrefix(e, "HOME="), strings.HasPrefix(e, "USERPROFILE="):
+			continue
+		default:
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func firstMatch(s string, re *regexp.Regexp) string {

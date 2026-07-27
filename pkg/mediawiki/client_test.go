@@ -105,3 +105,53 @@ func TestResponseBodyPreview(t *testing.T) {
 		t.Fatalf("preview suffix = %q, want ...", got[len(got)-3:])
 	}
 }
+
+func TestDoRequestRetriesInternalAPIError(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if calls.Add(1) == 1 {
+			_, _ = w.Write([]byte(`{"error":{"code":"internal_api_error_DBConnectionError","info":"Caught exception of type Wikimedia\\Rdbms\\DBConnectionError"}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"query":{"pages":{"1":{"revisions":[{"slots":{"main":{"*":"ok"}}}]}}}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	backoffs := rateLimitBackoffs
+	rateLimitBackoffs = []time.Duration{time.Millisecond}
+	t.Cleanup(func() { rateLimitBackoffs = backoffs })
+
+	requestDelay = 0
+	t.Cleanup(func() { requestDelay = 100 * time.Millisecond })
+
+	client := &MediaWikiClient{
+		apiURL:     server.URL,
+		httpClient: server.Client(),
+		userAgent:  "test",
+		tokens:     make(map[string]string),
+	}
+
+	content, err := client.getPageContent("Template:World/wrld_test/name")
+	if err != nil {
+		t.Fatalf("getPageContent: %v", err)
+	}
+	if content != "ok" {
+		t.Fatalf("content = %q, want ok", content)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("calls = %d, want 2", got)
+	}
+}
+
+func TestIsTransientAPIError(t *testing.T) {
+	t.Parallel()
+	if !isTransientAPIError("internal_api_error_DBConnectionError") {
+		t.Fatal("expected DBConnectionError to be transient")
+	}
+	if isTransientAPIError("badtoken") {
+		t.Fatal("badtoken must not be treated as transient")
+	}
+}

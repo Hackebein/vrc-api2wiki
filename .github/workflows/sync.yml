@@ -39,6 +39,12 @@ jobs:
           path: .vrchat-session/cookies.jar
           key: vrchat-api2wiki-session-v1
 
+      - name: Restore Steam session cache
+        uses: actions/cache@v4
+        with:
+          path: .steam-session
+          key: vrchat-api2wiki-steam-session-v1
+
       - name: Restore image cache
         uses: actions/cache@v4
         with:

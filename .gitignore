@@ -3,6 +3,7 @@ store-data/
 steam-output/
 .image-cache/
 .vrchat-session/
+.steam-session/
 third_party/DepotDownloader/DepotDownloader
 third_party/DepotDownloader/DepotDownloader.exe
 third_party/DepotDownloader/account.config

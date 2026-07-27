@@ -211,10 +211,27 @@ func (c *MediaWikiClient) doRequest(build func() (*http.Request, error)) (map[st
 				rateLimitAttempt++
 				continue
 			}
+			if isTransientAPIError(code) {
+				detail := code
+				if info != "" {
+					detail = code + ": " + info
+				}
+				if err := c.waitForBackoff(transientAttempt, detail); err != nil {
+					return nil, fmt.Errorf("API error: %s - %s", code, info)
+				}
+				transientAttempt++
+				continue
+			}
 			return nil, fmt.Errorf("API error: %s - %s", code, info)
 		}
 		return result, nil
 	}
+}
+
+// isTransientAPIError reports MediaWiki error codes that are safe to retry,
+// such as internal DB/connection failures returned with HTTP 200.
+func isTransientAPIError(code string) bool {
+	return strings.HasPrefix(code, "internal_api_error_")
 }
 
 func responseBodyPreview(body []byte) string {
