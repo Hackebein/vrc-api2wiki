@@ -115,9 +115,16 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 		if apiTitle == "" {
 			continue
 		}
+		shelfListings := vrchat.ShelfListings(shelf)
+		if len(shelfListings) == 0 {
+			if logger != nil {
+				logger.Info("skipping empty store shelf", "shelf", vrchat.DisplayShelfTitle(apiTitle))
+			}
+			continue
+		}
 
 		var listingIDs []string
-		for _, listing := range vrchat.ShelfListings(shelf) {
+		for _, listing := range shelfListings {
 			if id := stringField(listing, "id"); id != "" {
 				listingIDs = append(listingIDs, id)
 			}
@@ -141,19 +148,23 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 		}
 
 		var cards []vrchat.InventoryContentDisplay
-		for _, listing := range vrchat.ShelfListings(shelf) {
+		for _, listing := range shelfListings {
 			id := stringField(listing, "id")
 			hydrated := snap.Listings[id]
 			if hydrated == nil {
 				hydrated = listing
 			}
-			if id != "" {
-				onShelf[id] = true
-			}
 			name := stringField(hydrated, "displayName")
 			if name == "" {
 				name = stringField(listing, "displayName")
 			}
+			if id == "" || name == "" {
+				if logger != nil {
+					logger.Info("skipping empty store listing", "shelf", pathTitle, "id", id, "name", name)
+				}
+				continue
+			}
+			onShelf[id] = true
 			old := lookupInventoryWikiCard(existingCards, id, name)
 			preferredImage := ""
 			if old != nil {
@@ -166,6 +177,12 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 			card := vrchat.ListingToDisplay(hydrated, now, imageName)
 			applyWikiCardMerge(&card, old, id)
 			cards = append(cards, card)
+		}
+		if len(cards) == 0 {
+			if logger != nil {
+				logger.Info("skipping empty store shelf", "shelf", pathTitle)
+			}
+			continue
 		}
 		page := vrchat.RenderShelfWikitext(wikiTitle, iconFile, cards)
 		if err := wiki.EditPage(StoreListingsPageTitle(year, wikiTitle), page, true); err != nil {
