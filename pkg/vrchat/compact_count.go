@@ -66,6 +66,20 @@ func formatCompactCoeff(scaled float64) string {
 	return s
 }
 
+// CompactCountPageKeys are FlattenWorld subpaths stored as Compact number
+// template calls. Their page bodies must not run through |/= sanitization.
+var CompactCountPageKeys = []string{"visits", "favorites"}
+
+// IsCompactCountPage reports whether subpath is written as Compact number wikitext.
+func IsCompactCountPage(subpath string) bool {
+	for _, key := range CompactCountPageKeys {
+		if subpath == key {
+			return true
+		}
+	}
+	return false
+}
+
 // CompactCountWikitext returns a Compact number template call for n.
 func CompactCountWikitext(n int64) string {
 	coeff, unit := FormatCompactCount(n)

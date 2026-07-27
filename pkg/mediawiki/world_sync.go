@@ -143,7 +143,10 @@ func (c *MediaWikiClient) SyncWorldData(api *vrchat.Client, worldID string, worl
 			continue
 		}
 		title := WorldPageTitle(worldID, subpath)
-		text := SanitizeForWiki(value)
+		text := value
+		if !vrchat.IsCompactCountPage(subpath) {
+			text = SanitizeForWiki(value)
+		}
 		if err := c.EditPage(title, text, true); err != nil {
 			return fmt.Errorf("edit %s: %w", title, err)
 		}

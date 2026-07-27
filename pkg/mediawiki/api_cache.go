@@ -199,7 +199,17 @@ func dirtyWorldSubpaths(prev, curr map[string]any) map[string]bool {
 	prevPages := vrchat.FlattenWorld(prev)
 	for k, v := range currPages {
 		pv, ok := prevPages[k]
-		if !ok || SanitizeForWiki(pv) != SanitizeForWiki(v) {
+		if !ok {
+			dirty[k] = true
+			continue
+		}
+		if vrchat.IsCompactCountPage(k) {
+			if pv != v {
+				dirty[k] = true
+			}
+			continue
+		}
+		if SanitizeForWiki(pv) != SanitizeForWiki(v) {
 			dirty[k] = true
 		}
 	}

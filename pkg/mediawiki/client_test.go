@@ -155,3 +155,4 @@ func TestIsTransientAPIError(t *testing.T) {
 		t.Fatal("badtoken must not be treated as transient")
 	}
 }
+

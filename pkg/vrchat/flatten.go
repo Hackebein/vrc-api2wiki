@@ -278,7 +278,7 @@ func addDerivedPages(world map[string]any, pages map[string]string) {
 }
 
 func compactCountPages(world map[string]any, pages map[string]string) {
-	for _, key := range []string{"visits", "favorites"} {
+	for _, key := range CompactCountPageKeys {
 		raw, ok := world[key]
 		if !ok || isEmptyValue(raw) {
 			continue
