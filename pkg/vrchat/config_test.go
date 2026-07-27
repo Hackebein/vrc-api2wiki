@@ -11,12 +11,18 @@ import (
 
 func TestClientConfigPlatform(t *testing.T) {
 	cases := map[string]string{
-		"windows":                 "PC",
-		"open-beta-windows":       "PC",
-		"android-quest":           "QuestStore",
-		"open-beta-android-quest": "QuestStore",
-		"android-steamos":         "Default",
-		"something-else":          "Default",
+		"windows":                    "PC",
+		"open-beta-windows":          "PC",
+		"android-quest":              "QuestStore",
+		"open-beta-android-quest":    "QuestStore",
+		"android-pico":               "PicoStore",
+		"android-google-play":        "GooglePlay",
+		"android-viveport":           "XRElite",
+		"open-beta-android-viveport": "XRElite",
+		"windows-viveport":           "PC",
+		"open-beta-windows-viveport": "PC",
+		"android-steamos":            "Default",
+		"something-else":             "Default",
 	}
 	for client, want := range cases {
 		if got := ClientConfigPlatform(client); got != want {

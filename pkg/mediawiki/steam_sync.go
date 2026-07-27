@@ -10,7 +10,10 @@ import (
 	"time"
 
 	"github.com/Hackebein/vrc-api2wiki/pkg/meta"
+	"github.com/Hackebein/vrc-api2wiki/pkg/pico"
+	"github.com/Hackebein/vrc-api2wiki/pkg/playstore"
 	"github.com/Hackebein/vrc-api2wiki/pkg/steam"
+	"github.com/Hackebein/vrc-api2wiki/pkg/viveport"
 	"github.com/Hackebein/vrc-api2wiki/pkg/vrchat"
 )
 
@@ -38,6 +41,15 @@ func RunSteamSync(wiki *MediaWikiClient, logger *slog.Logger) error {
 	}
 
 	if err := syncMetaQuestAndroid(wiki, root, mins, logger); err != nil {
+		return err
+	}
+	if err := syncPicoAndroid(wiki, root, mins, logger); err != nil {
+		return err
+	}
+	if err := syncGooglePlayAndroid(wiki, root, mins, logger); err != nil {
+		return err
+	}
+	if err := syncViveport(wiki, root, mins, logger); err != nil {
 		return err
 	}
 
@@ -106,6 +118,91 @@ func syncMetaQuestAndroid(wiki *MediaWikiClient, root string, mins map[string]in
 		return fmt.Errorf("meta quest open beta version: %w", err)
 	}
 	return writeClientBuild(wiki, root, meta.QuestOpenBetaClientName, openBeta, mins, logger)
+}
+
+func syncPicoAndroid(wiki *MediaWikiClient, root string, mins map[string]int, logger *slog.Logger) error {
+	httpClient := &http.Client{Timeout: 60 * time.Second}
+	if logger != nil {
+		logger.Info("fetching Pico Store LIVE version", "appId", pico.VRChatPicoAppID)
+	}
+	build, err := pico.FetchVRChatPicoBuild(httpClient)
+	if err != nil {
+		return fmt.Errorf("pico store live version: %w", err)
+	}
+	return writeClientBuild(wiki, root, pico.PicoClientName, build, mins, logger)
+}
+
+func syncGooglePlayAndroid(wiki *MediaWikiClient, root string, mins map[string]int, logger *slog.Logger) error {
+	httpClient := &http.Client{Timeout: 60 * time.Second}
+	if logger != nil {
+		logger.Info("fetching Google Play version", "package", playstore.VRChatPlayStorePackageID)
+	}
+	build, err := playstore.FetchVRChatPlayStoreBuild(httpClient)
+	if err != nil {
+		return fmt.Errorf("google play version: %w", err)
+	}
+	return writeClientBuild(wiki, root, playstore.PlayStoreClientName, build, mins, logger)
+}
+
+func syncViveport(wiki *MediaWikiClient, root string, mins map[string]int, logger *slog.Logger) error {
+	httpClient := &http.Client{Timeout: 60 * time.Second}
+	if logger != nil {
+		logger.Info("fetching Viveport Android LIVE version", "appId", viveport.VRChatAndroidAppID)
+	}
+	androidLive, err := viveport.FetchAndroidBuild(httpClient)
+	if err != nil {
+		return fmt.Errorf("viveport android live version: %w", err)
+	}
+	if err := writeClientBuild(wiki, root, viveport.AndroidClientName, androidLive, mins, logger); err != nil {
+		return err
+	}
+
+	if logger != nil {
+		logger.Info("fetching Viveport Android Open Beta version", "appId", viveport.VRChatAndroidAppID)
+	}
+	androidBeta, err := viveport.FetchAndroidOpenBetaBuild(httpClient)
+	if err != nil {
+		return fmt.Errorf("viveport android open beta version: %w", err)
+	}
+	if viveport.BuildsDiffer(androidLive, androidBeta) {
+		if err := writeClientBuild(wiki, root, viveport.AndroidOpenBetaClientName, androidBeta, mins, logger); err != nil {
+			return err
+		}
+	} else if logger != nil {
+		logger.Info("skipping Viveport Android Open Beta: same as LIVE", "client", viveport.AndroidOpenBetaClientName)
+	}
+
+	if logger != nil {
+		logger.Info("fetching Viveport Windows LIVE version", "appId", viveport.VRChatWindowsAppID)
+	}
+	windowsLive, err := viveport.FetchWindowsBuild(httpClient)
+	if err != nil {
+		if logger != nil {
+			logger.Info("skipping Viveport Windows LIVE: incomplete or unavailable version", "err", err)
+		}
+		return nil
+	}
+	if err := writeClientBuild(wiki, root, viveport.WindowsClientName, windowsLive, mins, logger); err != nil {
+		return err
+	}
+
+	if logger != nil {
+		logger.Info("fetching Viveport Windows Open Beta version", "appId", viveport.VRChatWindowsAppID)
+	}
+	windowsBeta, err := viveport.FetchWindowsOpenBetaBuild(httpClient)
+	if err != nil {
+		if logger != nil {
+			logger.Info("skipping Viveport Windows Open Beta: incomplete or unavailable version", "err", err)
+		}
+		return nil
+	}
+	if viveport.BuildsDiffer(windowsLive, windowsBeta) {
+		return writeClientBuild(wiki, root, viveport.WindowsOpenBetaClientName, windowsBeta, mins, logger)
+	}
+	if logger != nil {
+		logger.Info("skipping Viveport Windows Open Beta: same as LIVE", "client", viveport.WindowsOpenBetaClientName)
+	}
+	return nil
 }
 
 func syncSteamClient(

@@ -34,6 +34,24 @@ func TestExtractBuildMissing(t *testing.T) {
 	}
 }
 
+func TestExtractHighestBuildFromBytes(t *testing.T) {
+	data := []byte(`
+		2026.2.1p4-1839-94254b59aa-Release
+		2026.2.3p3-1867-62fb4319cb-Release
+		2026.2.3p1-1865-f71d38272d-Release
+	`)
+	cb, err := ExtractHighestBuildFromBytes(data, "android-google-play")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cb.Version != "2026.2.3p3" || cb.BuildNumber != "1867" || cb.BuildHash != "62fb4319cb" {
+		t.Fatalf("%+v", cb)
+	}
+	if cb.Branch != "android-google-play" {
+		t.Fatalf("branch %q", cb.Branch)
+	}
+}
+
 func TestClientBuildPages(t *testing.T) {
 	cb, err := ExtractBuildFromBytes([]byte("2026.2.3p3-1867-42912f4b5c-Release"), "windows")
 	if err != nil {

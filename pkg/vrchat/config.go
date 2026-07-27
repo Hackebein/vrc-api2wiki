@@ -17,6 +17,14 @@ func ClientConfigPlatform(clientName string) string {
 		return "PC"
 	case "android-quest", "open-beta-android-quest":
 		return "QuestStore"
+	case "android-pico":
+		return "PicoStore"
+	case "android-google-play":
+		return "GooglePlay"
+	case "android-viveport", "open-beta-android-viveport":
+		return "XRElite"
+	case "windows-viveport", "open-beta-windows-viveport":
+		return "PC"
 	case "android-steamos":
 		return "Default"
 	default:

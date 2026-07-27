@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -28,7 +29,35 @@ func ExtractBuildFromBytes(data []byte, branch string) (*ClientBuild, error) {
 	if len(matches) == 0 {
 		return nil, fmt.Errorf("no VRChat build string found")
 	}
-	m := matches[len(matches)-1]
+	return clientBuildFromMatch(matches[len(matches)-1], branch), nil
+}
+
+// ExtractHighestBuildFromBytes picks the match with the largest numeric build number.
+// Useful when a page embeds multiple historical version strings.
+func ExtractHighestBuildFromBytes(data []byte, branch string) (*ClientBuild, error) {
+	matches := buildPattern.FindAllSubmatch(data, -1)
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("no VRChat build string found")
+	}
+	bestIdx := 0
+	bestNum := -1
+	for i, m := range matches {
+		n, err := strconv.Atoi(string(m[2]))
+		if err != nil {
+			continue
+		}
+		if n >= bestNum {
+			bestNum = n
+			bestIdx = i
+		}
+	}
+	if bestNum < 0 {
+		return clientBuildFromMatch(matches[len(matches)-1], branch), nil
+	}
+	return clientBuildFromMatch(matches[bestIdx], branch), nil
+}
+
+func clientBuildFromMatch(m [][]byte, branch string) *ClientBuild {
 	return &ClientBuild{
 		Version:     string(m[1]),
 		BuildNumber: string(m[2]),
@@ -36,7 +65,7 @@ func ExtractBuildFromBytes(data []byte, branch string) (*ClientBuild, error) {
 		Branch:      branch,
 		FetchedAt:   time.Now().UTC(),
 		RawMatch:    string(m[0]),
-	}, nil
+	}
 }
 
 func ExtractBuildFromDir(dir, branch string) (*ClientBuild, error) {

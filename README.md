@@ -4,7 +4,7 @@ A Go service that keeps [VRChat Wiki](https://wiki.vrchat.com) in sync with live
 
 1. **Worlds** — populate `Template:World/<id>/…` data pages for infoboxes
 2. **Marketplace** — store shelves and paid avatars as `{{InventoryContentDisplay}}` pages plus listing images
-3. **Steam builds** — download VRChat depots via shipped [DepotDownloader](https://github.com/SteamRE/DepotDownloader) and publish client version/build metadata
+3. **Client builds** — Steam depots via shipped [DepotDownloader](https://github.com/SteamRE/DepotDownloader), plus Meta Quest, Pico Store, Google Play, and Viveport listing version metadata
 
 ## Quick start
 
@@ -51,13 +51,13 @@ go run ./cmd/vrc-api2wiki
 | `VRCHAT_PASSWORD` | Yes for marketplace | Password |
 | `VRCHAT_TOTP_SECRET` | Yes for marketplace | Raw base32 TOTP secret (not an otpauth URI) |
 
-### Steam builds
+### Client builds (Steam / Quest / Pico / Google Play / Viveport)
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `STEAM_USERNAME` | Yes for steam | Steam account that owns VRChat |
-| `STEAM_PASSWORD` | Yes for steam | Password |
-| `STEAM_SHARED_SECRET` | Yes for steam | Mobile authenticator `shared_secret` (base64); used to generate Steam Guard codes |
+| `STEAM_USERNAME` | Yes for steam depots | Steam account that owns VRChat |
+| `STEAM_PASSWORD` | Yes for steam depots | Password |
+| `STEAM_SHARED_SECRET` | Yes for steam depots | Mobile authenticator `shared_secret` (base64); used to generate Steam Guard codes |
 
 ## Offline mode
 
