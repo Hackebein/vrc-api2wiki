@@ -40,6 +40,33 @@ func TestDirtyWorldSubpaths(t *testing.T) {
 	}
 }
 
+func TestDirtyWorldSubpathsCompactCounts(t *testing.T) {
+	// Raw visits differ but compact to the same wikitext (28.8k).
+	prev := map[string]any{
+		"id":        "wrld_test",
+		"visits":    float64(28817),
+		"favorites": float64(1413125),
+	}
+	curr := map[string]any{
+		"id":        "wrld_test",
+		"visits":    float64(28849),
+		"favorites": float64(1413999),
+	}
+	dirty := dirtyWorldSubpaths(prev, curr)
+	if dirty["visits"] || dirty["favorites"] {
+		t.Fatalf("compact-stable counts should not be dirty: %#v", dirty)
+	}
+
+	curr["visits"] = float64(28850) // 28.9k
+	dirty = dirtyWorldSubpaths(prev, curr)
+	if !dirty["visits"] {
+		t.Fatal("visits should be dirty when compact form changes")
+	}
+	if dirty["favorites"] {
+		t.Fatalf("favorites should stay clean: %#v", dirty)
+	}
+}
+
 func TestDirtyWorldSubpathsColdCache(t *testing.T) {
 	curr := map[string]any{"id": "wrld_test", "name": "Alpha", "visits": float64(1)}
 	dirty := dirtyWorldSubpaths(nil, curr)

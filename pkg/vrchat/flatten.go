@@ -273,6 +273,22 @@ func addDerivedPages(world map[string]any, pages map[string]string) {
 			pages["content"] = content
 		}
 	}
+
+	compactCountPages(world, pages)
+}
+
+func compactCountPages(world map[string]any, pages map[string]string) {
+	for _, key := range []string{"visits", "favorites"} {
+		raw, ok := world[key]
+		if !ok || isEmptyValue(raw) {
+			continue
+		}
+		n, ok := int64FromAny(raw)
+		if !ok {
+			continue
+		}
+		pages[key] = CompactCountWikitext(n)
+	}
 }
 
 func derivePlatforms(world map[string]any) string {

@@ -195,6 +195,23 @@ func TestFlattenWorldContentTags(t *testing.T) {
 	}
 }
 
+func TestFlattenWorldCompactCounts(t *testing.T) {
+	world := map[string]any{
+		"id":        "wrld_00000000-0000-4000-8000-000000000004",
+		"visits":    float64(28817),
+		"favorites": float64(1413125),
+	}
+
+	pages := FlattenWorld(world)
+
+	if pages["visits"] != "{{Compact number|28.8|k}}" {
+		t.Fatalf("unexpected visits: %q", pages["visits"])
+	}
+	if pages["favorites"] != "{{Compact number|1.41|M}}" {
+		t.Fatalf("unexpected favorites: %q", pages["favorites"])
+	}
+}
+
 func TestFlattenWorldEmptyAuthorTags(t *testing.T) {
 	world := map[string]any{
 		"id":   "wrld_00000000-0000-4000-8000-000000000001",
