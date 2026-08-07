@@ -47,14 +47,11 @@ func (c *MediaWikiClient) syncWorldImage(api *vrchat.Client, world map[string]an
 	if fileID := vrchat.FileIDFromURL(imageURL); fileID != "" {
 		info, err := api.GetFileDownload(fileID)
 		if err == nil {
-			ext := info.Ext
-			if ext == "" {
-				ext = "png"
-			}
-			filename := WorldImageFilename(worldID, property, ext)
 			sourceRef := FileSourceRef(fileID, info.Version)
 			description := WorldImageURLFileDescription(worldID, authorName, date, sourceRef)
-			uploaded, skippedDownload, err := syncFileBytes(c, filename, sourceRef, description, cache, func() ([]byte, error) {
+			filename, uploaded, skippedDownload, err := syncFileBytes(c, func(ext string) string {
+				return WorldImageFilename(worldID, property, ext)
+			}, info.Ext, sourceRef, description, cache, func() ([]byte, error) {
 				data, _, err := api.DownloadImage(info.URL)
 				if err != nil {
 					data, _, err = api.DownloadFileBytes(fileID)
@@ -92,11 +89,12 @@ func (c *MediaWikiClient) syncWorldImage(api *vrchat.Client, world map[string]an
 // infobox template derives the file name from the world id.
 func (c *MediaWikiClient) syncYouTubeThumbnail(api *vrchat.Client, world map[string]any, worldID, videoID, authorName string, cache *imageSyncCache) error {
 	videoID = strings.TrimSpace(videoID)
-	filenameJPG := WorldImageFilename(worldID, "previewYoutubeId", "jpg")
 	description := YouTubeThumbnailFileDescription(worldID, videoID, authorName, worldDateFromMap(world))
 	sourceRef := "https://www.youtube.com/watch?v=" + videoID
 
-	uploaded, skippedDownload, err := syncFileBytes(c, filenameJPG, sourceRef, description, cache, func() ([]byte, error) {
+	filename, uploaded, skippedDownload, err := syncFileBytes(c, func(ext string) string {
+		return WorldImageFilename(worldID, "previewYoutubeId", ext)
+	}, "jpg", sourceRef, description, cache, func() ([]byte, error) {
 		data, _, err := api.DownloadYouTubeThumbnail(videoID)
 		return data, err
 	}, c.logger)
@@ -104,7 +102,7 @@ func (c *MediaWikiClient) syncYouTubeThumbnail(api *vrchat.Client, world map[str
 		return err
 	}
 	if c.logger != nil {
-		c.logger.Info("youtube thumbnail processed", "world_id", worldID, "video_id", videoID, "filename", filenameJPG, "uploaded", uploaded, "skipped_download", skippedDownload)
+		c.logger.Info("youtube thumbnail processed", "world_id", worldID, "video_id", videoID, "filename", filename, "uploaded", uploaded, "skipped_download", skippedDownload)
 	}
 	return nil
 }

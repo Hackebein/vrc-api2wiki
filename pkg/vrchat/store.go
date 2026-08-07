@@ -206,14 +206,14 @@ func (c *Client) GetFileDownload(fileID string) (*FileDownloadInfo, error) {
 		Version:  int(ver),
 		URL:      stringField(fileObj, "url"),
 		FileName: stringField(fileObj, "fileName"),
-		Ext:      strings.TrimPrefix(ext, "."),
+		Ext:      NormalizeImageExt(ext),
 	}
 	if info.URL == "" {
 		return nil, fmt.Errorf("file %s: empty download url", fileID)
 	}
 	if info.Ext == "" && info.FileName != "" {
 		if i := strings.LastIndex(info.FileName, "."); i >= 0 {
-			info.Ext = info.FileName[i+1:]
+			info.Ext = NormalizeImageExt(info.FileName[i+1:])
 		}
 	}
 	if info.Ext == "" {

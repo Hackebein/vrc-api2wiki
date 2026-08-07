@@ -1,6 +1,7 @@
 package vrchat
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -29,6 +30,72 @@ var contentTypeExtensions = map[string]string{
 	"image/gif":  "gif",
 }
 
+var (
+	pngMagic  = []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
+	jpegMagic = []byte{0xff, 0xd8, 0xff}
+	gif87a    = []byte("GIF87a")
+	gif89a    = []byte("GIF89a")
+	riffMagic = []byte("RIFF")
+	webpMagic = []byte("WEBP")
+)
+
+// NormalizeImageExt lowercases and maps "jpeg" → "jpg". Unknown values are
+// returned unchanged (callers may still reject them).
+func NormalizeImageExt(ext string) string {
+	ext = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(ext)), ".")
+	if ext == "jpeg" {
+		return "jpg"
+	}
+	return ext
+}
+
+// ReplaceImageExt returns filename with its final extension replaced by ext.
+// Prefer this when reusing a wiki filename but the real bytes need a different
+// type (e.g. preferred "ListingImage Foo.png" for JPEG bytes → ".jpg").
+func ReplaceImageExt(filename, ext string) string {
+	filename = strings.TrimSpace(filename)
+	ext = NormalizeImageExt(ext)
+	if filename == "" {
+		return filename
+	}
+	if ext == "" {
+		return filename
+	}
+	if i := strings.LastIndex(filename, "."); i >= 0 && !strings.Contains(filename[i+1:], "/") {
+		return filename[:i+1] + ext
+	}
+	return filename + "." + ext
+}
+
+// ImageExtensionFromBytes returns png/jpg/webp/gif based on magic bytes, or
+// "" when the payload is not a recognized image. Prefer this over API metadata
+// or Content-Type: MediaWiki verifies uploads the same way.
+func ImageExtensionFromBytes(data []byte) string {
+	switch {
+	case len(data) >= 8 && bytes.Equal(data[:8], pngMagic):
+		return "png"
+	case len(data) >= 3 && bytes.Equal(data[:3], jpegMagic):
+		return "jpg"
+	case len(data) >= 6 && (bytes.Equal(data[:6], gif87a) || bytes.Equal(data[:6], gif89a)):
+		return "gif"
+	case len(data) >= 12 && bytes.Equal(data[:4], riffMagic) && bytes.Equal(data[8:12], webpMagic):
+		return "webp"
+	default:
+		return ""
+	}
+}
+
+// ResolveImageExt prefers magic-byte detection, then fallback (API/header/URL).
+func ResolveImageExt(data []byte, fallback string) string {
+	if ext := ImageExtensionFromBytes(data); ext != "" {
+		return ext
+	}
+	if ext := NormalizeImageExt(fallback); ext == "png" || ext == "jpg" || ext == "webp" || ext == "gif" {
+		return ext
+	}
+	return "png"
+}
+
 func imageExtension(contentType, rawURL string) (string, error) {
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err == nil {
@@ -37,12 +104,9 @@ func imageExtension(contentType, rawURL string) (string, error) {
 		}
 	}
 	if u, err := url.Parse(rawURL); err == nil {
-		ext := strings.TrimPrefix(strings.ToLower(path.Ext(u.Path)), ".")
+		ext := NormalizeImageExt(path.Ext(u.Path))
 		switch ext {
-		case "png", "jpg", "jpeg", "webp", "gif":
-			if ext == "jpeg" {
-				ext = "jpg"
-			}
+		case "png", "jpg", "webp", "gif":
 			return ext, nil
 		}
 	}
@@ -51,7 +115,8 @@ func imageExtension(contentType, rawURL string) (string, error) {
 
 // DownloadImage fetches image bytes from a VRChat file URL (redirects to the
 // CDN are followed by the HTTP client) and returns the bytes plus the file
-// extension derived from the Content-Type header or URL path.
+// extension. Magic bytes win over Content-Type and URL path so the wiki
+// filename matches MediaWiki's MIME verification.
 func (c *Client) DownloadImage(rawURL string) ([]byte, string, error) {
 	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -80,6 +145,9 @@ func (c *Client) DownloadImage(rawURL string) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("download image %s: empty body", rawURL)
 	}
 
+	if ext := ImageExtensionFromBytes(data); ext != "" {
+		return data, ext, nil
+	}
 	ext, err := imageExtension(resp.Header.Get("Content-Type"), rawURL)
 	if err != nil {
 		return nil, "", err

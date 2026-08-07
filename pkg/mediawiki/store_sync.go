@@ -518,7 +518,7 @@ func syncShelfIcon(wiki *MediaWikiClient, api *vrchat.Client, shelf map[string]a
 	}
 	filename, err := uploadNamedFile(wiki, api, fileID, func(ext string) string {
 		if existingIcon != "" {
-			return existingIcon
+			return vrchat.ReplaceImageExt(existingIcon, ext)
 		}
 		return vrchat.ShelfIconFilename(wikiTitle, ext)
 	}, func(sourceRef string) string {
@@ -538,7 +538,7 @@ func syncListingMedia(wiki *MediaWikiClient, api *vrchat.Client, listing map[str
 	if fileID := stringField(listing, "imageId"); fileID != "" {
 		filename, err := uploadNamedFile(wiki, api, fileID, func(ext string) string {
 			if preferredListingImage != "" {
-				return preferredListingImage
+				return vrchat.ReplaceImageExt(preferredListingImage, ext)
 			}
 			return vrchat.ListingImageFilename(name, ext)
 		}, func(sourceRef string) string {
@@ -592,10 +592,7 @@ func syncListingMedia(wiki *MediaWikiClient, api *vrchat.Client, listing map[str
 		entryName := stringField(entry, "name")
 		if _, err := uploadNamedFile(wiki, api, gid, func(ext string) string {
 			if entryName != "" {
-				if strings.Contains(entryName, ".") {
-					return entryName
-				}
-				return entryName + "." + ext
+				return vrchat.ReplaceImageExt(entryName, ext)
 			}
 			return gid + "." + ext
 		}, func(sourceRef string) string {
@@ -620,15 +617,10 @@ func uploadNamedFile(wiki *MediaWikiClient, api *vrchat.Client, fileID string, n
 	if err != nil {
 		return "", err
 	}
-	ext := info.Ext
-	if ext == "" {
-		ext = "png"
-	}
-	filename := nameFn(ext)
 	sourceRef := FileSourceRef(fileID, info.Version)
 	desc := descFn(sourceRef)
 
-	uploaded, skippedDownload, err := syncFileBytes(wiki, filename, sourceRef, desc, cache, func() ([]byte, error) {
+	filename, uploaded, skippedDownload, err := syncFileBytes(wiki, nameFn, info.Ext, sourceRef, desc, cache, func() ([]byte, error) {
 		data, _, err := api.DownloadImage(info.URL)
 		if err != nil {
 			data, _, err = api.DownloadFileBytes(fileID)
@@ -647,48 +639,66 @@ func uploadNamedFile(wiki *MediaWikiClient, api *vrchat.Client, fileID string, n
 	return filename, nil
 }
 
-// syncFileBytes uploads filename from disk cache or downloadFn. Replacements
-// are detected because sourceRef includes fileID@version (or yt:<id>); a new
-// ref misses the disk cache and fails the wiki sourceRef check.
-func syncFileBytes(wiki *MediaWikiClient, filename, sourceRef, desc string, cache *imageSyncCache, downloadFn func() ([]byte, error), logger *slog.Logger) (uploaded, skippedDownload bool, err error) {
+// syncFileBytes uploads a file named by nameFn(ext). When bytes are available
+// (disk cache or download), ext comes from magic-byte sniffing so a wrong API
+// metadata extension (e.g. .png for JPEG bytes) cannot fail MediaWiki's
+// verification. fallbackExt is only used for the no-download skip path.
+// Replacements are detected because sourceRef includes fileID@version (or
+// yt:<id>); a new ref misses the disk cache and fails the wiki sourceRef check.
+func syncFileBytes(wiki *MediaWikiClient, nameFn func(ext string) string, fallbackExt, sourceRef, desc string, cache *imageSyncCache, downloadFn func() ([]byte, error), logger *slog.Logger) (filename string, uploaded, skippedDownload bool, err error) {
 	var disk *diskImageCache
 	if cache != nil {
 		disk = cache.disk
 	}
 
-	st, err := wiki.getFileState(filename)
-	if err != nil {
-		return false, false, err
+	fallbackExt = vrchat.NormalizeImageExt(fallbackExt)
+	if fallbackExt == "" {
+		fallbackExt = "png"
+	}
+	provisional := nameFn(fallbackExt)
+
+	resolveName := func(data []byte) string {
+		return nameFn(vrchat.ResolveImageExt(data, fallbackExt))
 	}
 
 	if data, sha, ok := disk.Get(sourceRef); ok {
+		filename = resolveName(data)
+		st, err := wiki.getFileState(filename)
+		if err != nil {
+			return "", false, false, err
+		}
 		if st.exists && st.sha1 != "" && strings.EqualFold(st.sha1, sha) {
 			if sourceRef != "" && !strings.Contains(st.content, sourceRef) {
 				if err := wiki.ensureFileDescription(filename, desc); err != nil {
-					return false, false, err
+					return "", false, false, err
 				}
 			}
-			return false, true, nil
+			return filename, false, true, nil
 		}
 		uploaded, err = wiki.UploadFile(filename, data, desc)
-		return uploaded, true, err
+		return filename, uploaded, true, err
 	}
 
+	st, err := wiki.getFileState(provisional)
+	if err != nil {
+		return "", false, false, err
+	}
 	if st.exists && st.sha1 != "" {
 		if sourceRef == "" || strings.Contains(st.content, sourceRef) {
-			return false, true, nil
+			return provisional, false, true, nil
 		}
 	}
 
 	data, err := downloadFn()
 	if err != nil {
-		return false, false, err
+		return "", false, false, err
 	}
 	if err := disk.Put(sourceRef, data); err != nil && logger != nil {
 		logger.Warn("image cache write failed", "ref", sourceRef, "err", err)
 	}
+	filename = resolveName(data)
 	uploaded, err = wiki.UploadFile(filename, data, desc)
-	return uploaded, false, err
+	return filename, uploaded, false, err
 }
 
 func syncAvatarImage(wiki *MediaWikiClient, api *vrchat.Client, av map[string]any, cache *imageSyncCache, logger *slog.Logger) (string, error) {
