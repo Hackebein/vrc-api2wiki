@@ -273,7 +273,6 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 	}
 
 	if len(offers) > 0 {
-		offers = orderOffersLikeWiki(offers, wikiShelves)
 		offerRows := make([]struct{ Title, IconFile string }, len(offers))
 		for i, o := range offers {
 			offerRows[i] = struct{ Title, IconFile string }{Title: o.Title, IconFile: o.IconFile}
@@ -465,30 +464,6 @@ func loadWikiShelfIndex(wiki *MediaWikiClient, year int, logger *slog.Logger) []
 		})
 	}
 	return out
-}
-
-func orderOffersLikeWiki(offers []currentOfferShelf, wikiShelves []wikiShelfInfo) []currentOfferShelf {
-	if len(wikiShelves) == 0 || len(offers) == 0 {
-		return offers
-	}
-	byTitle := map[string]currentOfferShelf{}
-	for _, o := range offers {
-		byTitle[o.Title] = o
-	}
-	var ordered []currentOfferShelf
-	seen := map[string]bool{}
-	for _, ws := range wikiShelves {
-		if o, ok := byTitle[ws.Title]; ok {
-			ordered = append(ordered, o)
-			seen[ws.Title] = true
-		}
-	}
-	for _, o := range offers {
-		if !seen[o.Title] {
-			ordered = append(ordered, o)
-		}
-	}
-	return ordered
 }
 
 func resolveWikiShelfTitle(apiTitle string, listingIDs []string, wikiShelves []wikiShelfInfo) string {

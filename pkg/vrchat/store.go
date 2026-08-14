@@ -321,7 +321,20 @@ func writeJSON(path string, v any) error {
 }
 
 func StoreShelves(store map[string]any) []map[string]any {
-	raw, _ := store["shelves"].([]any)
+	return orderByIDs(mapsFromAny(store["shelves"]), stringSlice(store["shelfIds"]))
+}
+
+func ShelfListings(shelf map[string]any) []map[string]any {
+	var listings []map[string]any
+	if hl, ok := shelf["highlightListing"].(map[string]any); ok {
+		listings = append(listings, hl)
+	}
+	listings = append(listings, mapsFromAny(shelf["listings"])...)
+	return orderByIDs(listings, stringSlice(shelf["listingIds"]))
+}
+
+func mapsFromAny(v any) []map[string]any {
+	raw, _ := v.([]any)
 	out := make([]map[string]any, 0, len(raw))
 	for _, s := range raw {
 		if m, ok := s.(map[string]any); ok {
@@ -331,15 +344,40 @@ func StoreShelves(store map[string]any) []map[string]any {
 	return out
 }
 
-func ShelfListings(shelf map[string]any) []map[string]any {
-	var out []map[string]any
-	if hl, ok := shelf["highlightListing"].(map[string]any); ok {
-		out = append(out, hl)
+func orderByIDs(items []map[string]any, ids []string) []map[string]any {
+	byID := map[string]map[string]any{}
+	unique := make([]map[string]any, 0, len(items))
+	seen := map[string]bool{}
+	for _, m := range items {
+		id := stringField(m, "id")
+		if id != "" {
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			byID[id] = m
+		}
+		unique = append(unique, m)
 	}
-	raw, _ := shelf["listings"].([]any)
-	for _, l := range raw {
-		if m, ok := l.(map[string]any); ok {
+	if len(ids) == 0 {
+		return unique
+	}
+	out := make([]map[string]any, 0, len(unique))
+	used := map[string]bool{}
+	for _, id := range ids {
+		if m, ok := byID[id]; ok {
 			out = append(out, m)
+			used[id] = true
+		}
+	}
+	for _, m := range unique {
+		id := stringField(m, "id")
+		if id != "" && used[id] {
+			continue
+		}
+		out = append(out, m)
+		if id != "" {
+			used[id] = true
 		}
 	}
 	return out
