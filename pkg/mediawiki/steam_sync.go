@@ -128,9 +128,10 @@ func syncCreatorCompanionTools(wiki *MediaWikiClient, root string, logger *slog.
 	}
 	beta, err := vcc.FetchCreatorCompanionBeta(httpClient)
 	if err != nil {
-		return fmt.Errorf("creator companion beta version: %w", err)
-	}
-	if err := writeToolVersion(wiki, root, vcc.CreatorCompanionBetaClientName, beta.Version, logger); err != nil {
+		if logger != nil {
+			logger.Info("skipping VRChat Creator Companion beta version", "err", err)
+		}
+	} else if err := writeToolVersion(wiki, root, vcc.CreatorCompanionBetaClientName, beta.Version, logger); err != nil {
 		return err
 	}
 

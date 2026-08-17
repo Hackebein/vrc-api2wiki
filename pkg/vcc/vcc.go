@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -47,11 +46,11 @@ func FetchCreatorCompanion(httpClient *http.Client) (*steam.ClientBuild, error) 
 }
 
 func FetchCreatorCompanionBeta(httpClient *http.Client) (*steam.ClientBuild, error) {
-	body, err := getBytes(httpClient, githubReleasesURL, 60*time.Second)
+	body, err := getBytes(httpClient, newsURL, 60*time.Second)
 	if err != nil {
 		return nil, err
 	}
-	version, err := parseNewestPrereleaseTag(body)
+	version, err := parsePrereleaseVersion(body)
 	if err != nil {
 		return nil, err
 	}
@@ -103,6 +102,17 @@ func parseStableVersion(newsHTML []byte) (string, error) {
 	return "", fmt.Errorf("vcc docs news: no stable Release version found")
 }
 
+func parsePrereleaseVersion(newsHTML []byte) (string, error) {
+	matches := releaseTitlePattern.FindAllSubmatch(newsHTML, -1)
+	for _, m := range matches {
+		v := normalizeVersion(string(m[1]))
+		if isPrereleaseVersion(v) {
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf("vcc docs news: no prerelease Release version found")
+}
+
 type githubRelease struct {
 	TagName    string `json:"tag_name"`
 	Prerelease bool   `json:"prerelease"`
@@ -110,24 +120,6 @@ type githubRelease struct {
 		Name               string `json:"name"`
 		BrowserDownloadURL string `json:"browser_download_url"`
 	} `json:"assets"`
-}
-
-func parseNewestPrereleaseTag(body []byte) (string, error) {
-	var releases []githubRelease
-	if err := json.Unmarshal(body, &releases); err != nil {
-		return "", fmt.Errorf("github releases: %w", err)
-	}
-	for _, r := range releases {
-		if !r.Prerelease {
-			continue
-		}
-		v := normalizeVersion(r.TagName)
-		if !semverPattern.MatchString(v) {
-			continue
-		}
-		return v, nil
-	}
-	return "", fmt.Errorf("github releases: no prerelease found")
 }
 
 func parsePortableZipRelease(body []byte) (tag, zipURL string, err error) {
@@ -148,7 +140,7 @@ func parsePortableZipRelease(body []byte) (tag, zipURL string, err error) {
 			}
 		}
 		// Prefer prereleases that ship the portable zip even when assets are omitted from the payload.
-		if r.Prerelease {
+		if r.Prerelease || isPrereleaseVersion(v) {
 			return v, "", nil
 		}
 	}
@@ -212,11 +204,10 @@ func getBytes(httpClient *http.Client, url string, timeout time.Duration) ([]byt
 		return nil, err
 	}
 	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept", "application/json, text/html, */*")
 	if strings.Contains(url, "api.github.com") {
-		if token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
-		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+	} else {
+		req.Header.Set("Accept", "application/json, text/html, */*")
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {

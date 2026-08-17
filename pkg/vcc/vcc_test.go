@@ -26,13 +26,13 @@ func TestParseStableVersionSkipsBeta(t *testing.T) {
 	}
 }
 
-func TestParseNewestPrereleaseTag(t *testing.T) {
-	body := `[
-		{"tag_name":"2.5.0-beta.2","prerelease":true,"assets":[]},
-		{"tag_name":"2.5.0-beta.1","prerelease":true,"assets":[]},
-		{"tag_name":"2.3.0-beta.3","prerelease":false,"assets":[]}
-	]`
-	got, err := parseNewestPrereleaseTag([]byte(body))
+func TestParsePrereleaseVersion(t *testing.T) {
+	html := `
+		<a href="/news/release-2.4.5">Release 2.4.5</a>
+		<a href="/news/release-2.5.0">Release 2.5.0-beta.2</a>
+		<a href="/news/release-2.5.0">Release 2.5.0-beta.1</a>
+	`
+	got, err := parsePrereleaseVersion([]byte(html))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,9 +41,39 @@ func TestParseNewestPrereleaseTag(t *testing.T) {
 	}
 }
 
+func TestParsePrereleaseVersionMissing(t *testing.T) {
+	html := `
+		<a href="/news/release-2.4.5">Release 2.4.5</a>
+		<a href="/news/release-2.4.4">Release 2.4.4</a>
+	`
+	_, err := parsePrereleaseVersion([]byte(html))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "no prerelease Release version found") {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestParsePortableZipReleaseConstructsURL(t *testing.T) {
 	body := `[
 		{"tag_name":"2.5.0-beta.2","prerelease":true,"assets":[]}
+	]`
+	tag, zipURL, err := parsePortableZipRelease([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tag != "2.5.0-beta.2" {
+		t.Fatalf("tag %q", tag)
+	}
+	if zipURL != "" {
+		t.Fatalf("expected empty zipURL, got %q", zipURL)
+	}
+}
+
+func TestParsePortableZipReleaseUsesPrereleaseTagName(t *testing.T) {
+	body := `[
+		{"tag_name":"2.5.0-beta.2","prerelease":false,"assets":[]}
 	]`
 	tag, zipURL, err := parsePortableZipRelease([]byte(body))
 	if err != nil {
@@ -133,10 +163,10 @@ func TestFetchCreatorCompanion(t *testing.T) {
 
 func TestFetchCreatorCompanionBeta(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		if !strings.Contains(req.URL.Host, "api.github.com") {
+		if req.URL.Host != "vcc.docs.vrchat.com" {
 			t.Fatalf("host %s", req.URL.Host)
 		}
-		body := `[{"tag_name":"2.5.0-beta.2","prerelease":true,"assets":[]}]`
+		body := `<a href="/news/release-2.5.0">Release 2.5.0-beta.2</a><a href="/news/release-2.4.5">Release 2.4.5</a>`
 		return &http.Response{
 			StatusCode: 200,
 			Body:       io.NopCloser(strings.NewReader(body)),
@@ -149,6 +179,24 @@ func TestFetchCreatorCompanionBeta(t *testing.T) {
 	}
 	if cb.Version != "2.5.0-beta.2" || cb.Branch != CreatorCompanionBetaClientName {
 		t.Fatalf("%+v", cb)
+	}
+}
+
+func TestFetchCreatorCompanionBetaMissing(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := `<a href="/news/release-2.4.5">Release 2.4.5</a>`
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	_, err := FetchCreatorCompanionBeta(client)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "no prerelease Release version found") {
+		t.Fatalf("got %v", err)
 	}
 }
 
@@ -170,7 +218,13 @@ func TestFetchQuickLauncher(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case strings.Contains(req.URL.Host, "api.github.com"):
-			body := `[{"tag_name":"2.5.0-beta.2","prerelease":true,"assets":[]}]`
+			if req.Header.Get("Authorization") != "" {
+				t.Fatal("Authorization must not be sent to GitHub API")
+			}
+			if req.Header.Get("Accept") != "application/vnd.github+json" {
+				t.Fatalf("Accept %q", req.Header.Get("Accept"))
+			}
+			body := `[{"tag_name":"2.5.0-beta.2","prerelease":false,"assets":[]}]`
 			return &http.Response{
 				StatusCode: 200,
 				Body:       io.NopCloser(strings.NewReader(body)),
