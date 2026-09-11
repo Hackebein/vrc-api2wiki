@@ -422,15 +422,22 @@ func (c *MediaWikiClient) getPageContent(title string) (string, error) {
 	return "", fmt.Errorf("could not extract content from page: %s", title)
 }
 
+func isMissingPage(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "page does not exist") ||
+		strings.Contains(msg, "no revisions found for page") ||
+		strings.Contains(msg, "could not extract content from page")
+}
+
 func (c *MediaWikiClient) PageExists(title string) (bool, error) {
 	_, err := c.getPageContent(title)
 	if err == nil {
 		return true, nil
 	}
-	msg := err.Error()
-	if strings.Contains(msg, "page does not exist") ||
-		strings.Contains(msg, "no revisions found for page") ||
-		strings.Contains(msg, "could not extract content from page") {
+	if isMissingPage(err) {
 		return false, nil
 	}
 	return false, err
@@ -440,10 +447,7 @@ func (c *MediaWikiClient) EditPage(title, text string, bot bool) error {
 	trimmedNew := strings.TrimSpace(text)
 	currentContent, err := c.getPageContent(title)
 	if err != nil {
-		msg := err.Error()
-		if !strings.Contains(msg, "page does not exist") &&
-			!strings.Contains(msg, "no revisions found for page") &&
-			!strings.Contains(msg, "could not extract content from page") {
+		if !isMissingPage(err) {
 			return fmt.Errorf("get current content for page %s: %w", title, err)
 		}
 	} else if strings.TrimSpace(currentContent) == trimmedNew {
@@ -451,6 +455,19 @@ func (c *MediaWikiClient) EditPage(title, text string, bot bool) error {
 			c.logger.Info("offline: skip page (unchanged on wiki)", "title", title)
 		}
 		return nil
+	}
+	return c.WritePage(title, text, bot)
+}
+
+// EditPageIfMissing writes title only when the wiki page is absent.
+// Existing pages are left untouched, including human edits.
+func (c *MediaWikiClient) EditPageIfMissing(title, text string, bot bool) error {
+	_, err := c.getPageContent(title)
+	if err == nil {
+		return nil
+	}
+	if !isMissingPage(err) {
+		return fmt.Errorf("get current content for page %s: %w", title, err)
 	}
 	return c.WritePage(title, text, bot)
 }

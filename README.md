@@ -2,7 +2,7 @@
 
 A Go service that keeps [VRChat Wiki](https://wiki.vrchat.com) in sync with live VRChat API data:
 
-1. **Worlds** — populate `Template:World/<id>/…` data pages for infoboxes
+1. **Worlds** — populate `Template:World/<id>/…` data pages for infoboxes. `publicationDate` is written only when that subpage is missing, then left for wiki editors.
 2. **Marketplace** — store shelves and paid avatars as `{{InventoryContentDisplay}}` pages plus listing images
 3. **Client builds** — Steam depots via shipped [DepotDownloader](https://github.com/SteamRE/DepotDownloader), plus Meta Quest, Pico Store, Google Play, and Viveport listing version metadata
 4. **Creator tools** — VRChat Creator Companion (stable + beta) and VRC Quick Launcher versions for `Template:ClientBuild/…`

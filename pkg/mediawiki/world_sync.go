@@ -24,6 +24,12 @@ var imageProperties = map[string]struct{}{
 	"imageUrl": {},
 }
 
+// createOnlyWorldSubpaths are seeded from the API when the wiki page is
+// missing and never overwritten afterward, so editors can keep the value.
+var createOnlyWorldSubpaths = map[string]struct{}{
+	"publicationDate": {},
+}
+
 // WorldImageFilename returns the wiki file name (without "File:" prefix) for
 // an image property of a world, e.g. "wrld_..._imageUrl.png".
 func WorldImageFilename(worldID, property, ext string) string {
@@ -137,7 +143,8 @@ func (c *MediaWikiClient) SyncWorldData(api *vrchat.Client, worldID string, worl
 	}
 
 	for subpath, value := range pages {
-		if !dirty[subpath] {
+		_, createOnly := createOnlyWorldSubpaths[subpath]
+		if !dirty[subpath] && !createOnly {
 			continue
 		}
 		title := WorldPageTitle(worldID, subpath)
@@ -145,7 +152,13 @@ func (c *MediaWikiClient) SyncWorldData(api *vrchat.Client, worldID string, worl
 		if !vrchat.IsCompactCountPage(subpath) {
 			text = SanitizeForWiki(value)
 		}
-		if err := c.EditPage(title, text, true); err != nil {
+		var err error
+		if createOnly {
+			err = c.EditPageIfMissing(title, text, true)
+		} else {
+			err = c.EditPage(title, text, true)
+		}
+		if err != nil {
 			return fmt.Errorf("edit %s: %w", title, err)
 		}
 		written++
