@@ -31,12 +31,27 @@ var communityLabsReleasedAt = time.Date(2019, time.March, 13, 0, 0, 0, 0, time.U
 
 const preCommunityLabsPublicationDate = `before {{Date|2019-03-13}}<abbr title="The Community Labs feature was released on {{Date|2019-03-13}}. This world was published before that date.">*</abbr>`
 
-func formatWorldPublicationDate(raw string) (text string, overwrite bool) {
-	t, ok := parseWikiTime(raw)
-	if ok && t.Before(communityLabsReleasedAt) {
+func formatWorldPublicationDate(world map[string]any) (text string, overwrite bool) {
+	raw := worldString(world, "publicationDate")
+	if publishedBeforeCommunityLabs(world) {
 		return preCommunityLabsPublicationDate, true
 	}
 	return raw, false
+}
+
+func publishedBeforeCommunityLabs(world map[string]any) bool {
+	if world == nil {
+		return false
+	}
+	if t, ok := parseWikiTime(worldString(world, "publicationDate")); ok && t.Before(communityLabsReleasedAt) {
+		return true
+	}
+	labs := worldString(world, "labsPublicationDate")
+	if labs != "" && !strings.EqualFold(labs, "none") {
+		return false
+	}
+	created, ok := parseWikiTime(worldString(world, "created_at"))
+	return ok && created.Before(communityLabsReleasedAt)
 }
 
 // WorldImageFilename returns the wiki file name (without "File:" prefix) for
@@ -154,7 +169,7 @@ func (c *MediaWikiClient) SyncWorldData(api *vrchat.Client, worldID string, worl
 	for subpath, value := range pages {
 		title := WorldPageTitle(worldID, subpath)
 		if subpath == "publicationDate" {
-			text, overwrite := formatWorldPublicationDate(value)
+			text, overwrite := formatWorldPublicationDate(world)
 			var err error
 			if overwrite {
 				err = c.EditPage(title, text, true)
