@@ -8,73 +8,7 @@ import (
 	"time"
 )
 
-func TestFormatWorldPublicationDate(t *testing.T) {
-	tests := []struct {
-		name      string
-		world     map[string]any
-		want      string
-		overwrite bool
-	}{
-		{
-			name:      "publicationDate before Labs",
-			world:     map[string]any{"publicationDate": "2018-03-17T08:58:42.296Z"},
-			want:      preCommunityLabsPublicationDate,
-			overwrite: true,
-		},
-		{
-			name:      "publicationDate day before Labs",
-			world:     map[string]any{"publicationDate": "2019-03-12T23:59:59Z"},
-			want:      preCommunityLabsPublicationDate,
-			overwrite: true,
-		},
-		{
-			name:      "publicationDate at Labs launch",
-			world:     map[string]any{"publicationDate": "2019-03-13T00:00:00Z"},
-			want:      "2019-03-13T00:00:00Z",
-			overwrite: false,
-		},
-		{
-			name:      "later publicationDate",
-			world:     map[string]any{"publicationDate": "2020-01-01T00:00:00.000Z"},
-			want:      "2020-01-01T00:00:00.000Z",
-			overwrite: false,
-		},
-		{
-			name:      "unparseable publicationDate",
-			world:     map[string]any{"publicationDate": "not-a-date"},
-			want:      "not-a-date",
-			overwrite: false,
-		},
-		{
-			name: "created before Labs, never entered Labs",
-			world: map[string]any{
-				"created_at":          "2017-01-19T01:14:54.000Z",
-				"publicationDate":     "2019-05-08T04:34:57.581Z",
-				"labsPublicationDate": "none",
-			},
-			want:      preCommunityLabsPublicationDate,
-			overwrite: true,
-		},
-		{
-			name: "created before Labs, later entered Labs",
-			world: map[string]any{
-				"created_at":          "2017-11-12T05:30:26.368Z",
-				"publicationDate":     "2019-05-29T20:42:18.181Z",
-				"labsPublicationDate": "2019-05-18T04:09:08.413Z",
-			},
-			want:      "2019-05-29T20:42:18.181Z",
-			overwrite: false,
-		},
-	}
-	for _, tc := range tests {
-		got, overwrite := formatWorldPublicationDate(tc.world)
-		if got != tc.want || overwrite != tc.overwrite {
-			t.Fatalf("%s: formatWorldPublicationDate() = %q, %v; want %q, %v", tc.name, got, overwrite, tc.want, tc.overwrite)
-		}
-	}
-}
-
-func TestSyncWorldDataWritesPreLabsPublicationDate(t *testing.T) {
+func TestSyncWorldDataWritesISOPublicationDate(t *testing.T) {
 	edits := map[string]string{}
 	client := newWikiTestClient(t, map[string]string{}, edits)
 
@@ -88,12 +22,12 @@ func TestSyncWorldDataWritesPreLabsPublicationDate(t *testing.T) {
 	}
 
 	got := edits["Template:World/wrld_test/publicationDate"]
-	if got != preCommunityLabsPublicationDate {
-		t.Fatalf("publicationDate write = %q, want pre-labs note; edits=%#v", got, edits)
+	if got != "2018-03-17T08:58:42.296Z" {
+		t.Fatalf("publicationDate write = %q, want ISO timestamp; edits=%#v", got, edits)
 	}
 }
 
-func TestSyncWorldDataOverwritesPreLabsPublicationDate(t *testing.T) {
+func TestSyncWorldDataDoesNotOverwriteISOPublicationDate(t *testing.T) {
 	edits := map[string]string{}
 	client := newWikiTestClient(t, map[string]string{
 		"Template:World/wrld_test/publicationDate": "2018-03-17T08:58:42.296Z",
@@ -108,9 +42,29 @@ func TestSyncWorldDataOverwritesPreLabsPublicationDate(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if _, ok := edits["Template:World/wrld_test/publicationDate"]; ok {
+		t.Fatalf("existing ISO publicationDate should not be overwritten, edits=%#v", edits)
+	}
+}
+
+func TestSyncWorldDataRestoresPreLabsPublicationDateText(t *testing.T) {
+	edits := map[string]string{}
+	client := newWikiTestClient(t, map[string]string{
+		"Template:World/wrld_test/publicationDate": preCommunityLabsPublicationDate,
+	}, edits)
+
+	world := map[string]any{
+		"id":              "wrld_test",
+		"name":            "Alpha",
+		"publicationDate": "2018-03-17T08:58:42.296Z",
+	}
+	if err := client.SyncWorldData(nil, "wrld_test", world, newImageSyncCache(), openAPICache(t.TempDir())); err != nil {
+		t.Fatal(err)
+	}
+
 	got := edits["Template:World/wrld_test/publicationDate"]
-	if got != preCommunityLabsPublicationDate {
-		t.Fatalf("pre-labs publicationDate should be overwritten, edits=%#v", edits)
+	if got != "2018-03-17T08:58:42.296Z" {
+		t.Fatalf("pre-labs display text should be restored to ISO, edits=%#v", edits)
 	}
 }
 
@@ -163,7 +117,7 @@ func TestSyncWorldDataSeedsLaterPublicationDateWhenMissing(t *testing.T) {
 	}
 }
 
-func TestSyncWorldDataOverwritesCreatedBeforeLabs(t *testing.T) {
+func TestSyncWorldDataDoesNotOverwriteCreatedBeforeLabsISO(t *testing.T) {
 	edits := map[string]string{}
 	client := newWikiTestClient(t, map[string]string{
 		"Template:World/wrld_test/publicationDate": "2019-05-08T04:34:57.581Z",
@@ -180,13 +134,12 @@ func TestSyncWorldDataOverwritesCreatedBeforeLabs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := edits["Template:World/wrld_test/publicationDate"]
-	if got != preCommunityLabsPublicationDate {
-		t.Fatalf("created-before-Labs world should be overwritten, edits=%#v", edits)
+	if _, ok := edits["Template:World/wrld_test/publicationDate"]; ok {
+		t.Fatalf("ISO publicationDate should not be overwritten, edits=%#v", edits)
 	}
 }
 
-func TestSyncWorldDataSeedsPreLabsPublicationDateWhenNotDirty(t *testing.T) {
+func TestSyncWorldDataSeedsPublicationDateWhenNotDirty(t *testing.T) {
 	world := map[string]any{
 		"id":              "wrld_test",
 		"name":            "Alpha",
@@ -204,8 +157,8 @@ func TestSyncWorldDataSeedsPreLabsPublicationDateWhenNotDirty(t *testing.T) {
 	}
 
 	got := edits["Template:World/wrld_test/publicationDate"]
-	if got != preCommunityLabsPublicationDate {
-		t.Fatalf("missing pre-labs publicationDate should still be written, edits=%#v", edits)
+	if got != "2018-03-17T08:58:42.296Z" {
+		t.Fatalf("missing publicationDate should still be written, edits=%#v", edits)
 	}
 }
 
