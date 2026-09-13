@@ -8,7 +8,27 @@ import (
 	"time"
 )
 
-func TestSyncWorldDataCreatesMissingPublicationDate(t *testing.T) {
+func TestFormatWorldPublicationDate(t *testing.T) {
+	tests := []struct {
+		raw       string
+		want      string
+		overwrite bool
+	}{
+		{"2018-03-17T08:58:42.296Z", preCommunityLabsPublicationDate, true},
+		{"2019-03-12T23:59:59Z", preCommunityLabsPublicationDate, true},
+		{"2019-03-13T00:00:00Z", "2019-03-13T00:00:00Z", false},
+		{"2020-01-01T00:00:00.000Z", "2020-01-01T00:00:00.000Z", false},
+		{"not-a-date", "not-a-date", false},
+	}
+	for _, tc := range tests {
+		got, overwrite := formatWorldPublicationDate(tc.raw)
+		if got != tc.want || overwrite != tc.overwrite {
+			t.Fatalf("formatWorldPublicationDate(%q) = %q, %v; want %q, %v", tc.raw, got, overwrite, tc.want, tc.overwrite)
+		}
+	}
+}
+
+func TestSyncWorldDataWritesPreLabsPublicationDate(t *testing.T) {
 	edits := map[string]string{}
 	client := newWikiTestClient(t, map[string]string{}, edits)
 
@@ -22,12 +42,33 @@ func TestSyncWorldDataCreatesMissingPublicationDate(t *testing.T) {
 	}
 
 	got := edits["Template:World/wrld_test/publicationDate"]
-	if got != "2018-03-17T08:58:42.296Z" {
-		t.Fatalf("publicationDate write = %q, want API value; edits=%#v", got, edits)
+	if got != preCommunityLabsPublicationDate {
+		t.Fatalf("publicationDate write = %q, want pre-labs note; edits=%#v", got, edits)
 	}
 }
 
-func TestSyncWorldDataDoesNotOverwritePublicationDate(t *testing.T) {
+func TestSyncWorldDataOverwritesPreLabsPublicationDate(t *testing.T) {
+	edits := map[string]string{}
+	client := newWikiTestClient(t, map[string]string{
+		"Template:World/wrld_test/publicationDate": "2018-03-17T08:58:42.296Z",
+	}, edits)
+
+	world := map[string]any{
+		"id":              "wrld_test",
+		"name":            "Alpha",
+		"publicationDate": "2018-03-17T08:58:42.296Z",
+	}
+	if err := client.SyncWorldData(nil, "wrld_test", world, newImageSyncCache(), openAPICache(t.TempDir())); err != nil {
+		t.Fatal(err)
+	}
+
+	got := edits["Template:World/wrld_test/publicationDate"]
+	if got != preCommunityLabsPublicationDate {
+		t.Fatalf("pre-labs publicationDate should be overwritten, edits=%#v", edits)
+	}
+}
+
+func TestSyncWorldDataDoesNotOverwriteLaterPublicationDate(t *testing.T) {
 	edits := map[string]string{}
 	client := newWikiTestClient(t, map[string]string{
 		"Template:World/wrld_test/publicationDate": "2018-01-01",
@@ -50,7 +91,33 @@ func TestSyncWorldDataDoesNotOverwritePublicationDate(t *testing.T) {
 	}
 }
 
-func TestSyncWorldDataSeedsPublicationDateWhenNotDirty(t *testing.T) {
+func TestSyncWorldDataSeedsLaterPublicationDateWhenMissing(t *testing.T) {
+	world := map[string]any{
+		"id":              "wrld_test",
+		"name":            "Alpha",
+		"publicationDate": "2020-01-01T00:00:00.000Z",
+	}
+	apiSnap := openAPICache(t.TempDir())
+	if err := apiSnap.SaveWorld("wrld_test", world); err != nil {
+		t.Fatal(err)
+	}
+
+	edits := map[string]string{}
+	client := newWikiTestClient(t, map[string]string{}, edits)
+	if err := client.SyncWorldData(nil, "wrld_test", world, newImageSyncCache(), apiSnap); err != nil {
+		t.Fatal(err)
+	}
+
+	got := edits["Template:World/wrld_test/publicationDate"]
+	if got != "2020-01-01T00:00:00.000Z" {
+		t.Fatalf("missing later publicationDate should be seeded, edits=%#v", edits)
+	}
+	if _, ok := edits["Template:World/wrld_test/name"]; ok {
+		t.Fatalf("unchanged name should not be rewritten, edits=%#v", edits)
+	}
+}
+
+func TestSyncWorldDataSeedsPreLabsPublicationDateWhenNotDirty(t *testing.T) {
 	world := map[string]any{
 		"id":              "wrld_test",
 		"name":            "Alpha",
@@ -68,11 +135,8 @@ func TestSyncWorldDataSeedsPublicationDateWhenNotDirty(t *testing.T) {
 	}
 
 	got := edits["Template:World/wrld_test/publicationDate"]
-	if got != "2018-03-17T08:58:42.296Z" {
-		t.Fatalf("missing publicationDate should still be seeded, edits=%#v", edits)
-	}
-	if _, ok := edits["Template:World/wrld_test/name"]; ok {
-		t.Fatalf("unchanged name should not be rewritten, edits=%#v", edits)
+	if got != preCommunityLabsPublicationDate {
+		t.Fatalf("missing pre-labs publicationDate should still be written, edits=%#v", edits)
 	}
 }
 

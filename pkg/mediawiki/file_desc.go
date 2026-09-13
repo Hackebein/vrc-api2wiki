@@ -48,10 +48,10 @@ func worldLinkDescription(prefix, worldID string) string {
 	return fmt.Sprintf("%s for [[%s|{{World/%s/name}}]].", prefix, WorldAliasPageTitle(worldID), worldID)
 }
 
-func formatWikiDate(raw string) string {
+func parseWikiTime(raw string) (time.Time, bool) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return ""
+		return time.Time{}, false
 	}
 	formats := []string{
 		time.RFC3339Nano,
@@ -61,10 +61,18 @@ func formatWikiDate(raw string) string {
 	}
 	for _, layout := range formats {
 		if t, err := time.Parse(layout, raw); err == nil {
-			return t.Format("January 2, 2006")
+			return t, true
 		}
 	}
-	return ""
+	return time.Time{}, false
+}
+
+func formatWikiDate(raw string) string {
+	t, ok := parseWikiTime(raw)
+	if !ok {
+		return ""
+	}
+	return t.Format("January 2, 2006")
 }
 
 func worldDateFromMap(world map[string]any) string {

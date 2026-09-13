@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Hackebein/vrc-api2wiki/pkg/vrchat"
 )
@@ -24,10 +25,18 @@ var imageProperties = map[string]struct{}{
 	"imageUrl": {},
 }
 
-// createOnlyWorldSubpaths are seeded from the API when the wiki page is
-// missing and never overwritten afterward, so editors can keep the value.
-var createOnlyWorldSubpaths = map[string]struct{}{
-	"publicationDate": {},
+// communityLabsReleasedAt is when VRChat Community Labs launched. API
+// publication dates before this are not a real public-release time.
+var communityLabsReleasedAt = time.Date(2019, time.March, 13, 0, 0, 0, 0, time.UTC)
+
+const preCommunityLabsPublicationDate = `before {{Date|2019-03-13}}<abbr title="The Community Labs feature was released on {{Date|2019-03-13}}. This world was published before that date.">*</abbr>`
+
+func formatWorldPublicationDate(raw string) (text string, overwrite bool) {
+	t, ok := parseWikiTime(raw)
+	if ok && t.Before(communityLabsReleasedAt) {
+		return preCommunityLabsPublicationDate, true
+	}
+	return raw, false
 }
 
 // WorldImageFilename returns the wiki file name (without "File:" prefix) for
@@ -143,22 +152,29 @@ func (c *MediaWikiClient) SyncWorldData(api *vrchat.Client, worldID string, worl
 	}
 
 	for subpath, value := range pages {
-		_, createOnly := createOnlyWorldSubpaths[subpath]
-		if !dirty[subpath] && !createOnly {
+		title := WorldPageTitle(worldID, subpath)
+		if subpath == "publicationDate" {
+			text, overwrite := formatWorldPublicationDate(value)
+			var err error
+			if overwrite {
+				err = c.EditPage(title, text, true)
+			} else {
+				err = c.EditPageIfMissing(title, text, true)
+			}
+			if err != nil {
+				return fmt.Errorf("edit %s: %w", title, err)
+			}
+			written++
 			continue
 		}
-		title := WorldPageTitle(worldID, subpath)
+		if !dirty[subpath] {
+			continue
+		}
 		text := value
 		if !vrchat.IsCompactCountPage(subpath) {
 			text = SanitizeForWiki(value)
 		}
-		var err error
-		if createOnly {
-			err = c.EditPageIfMissing(title, text, true)
-		} else {
-			err = c.EditPage(title, text, true)
-		}
-		if err != nil {
+		if err := c.EditPage(title, text, true); err != nil {
 			return fmt.Errorf("edit %s: %w", title, err)
 		}
 		written++
