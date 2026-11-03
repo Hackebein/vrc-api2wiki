@@ -107,9 +107,14 @@ func DownloadDepot(ddPath, depotID, branch, outDir, username, password, sharedSe
 }
 
 func runDepotDownloader(ddPath, depotID, branch, outDir, filelist, username, password, sharedSecret string) (manifestID, steamBuildID, out string, err error) {
-	code, err := GenerateSteamGuardCode(sharedSecret, time.Now())
-	if err != nil {
-		return "", "", "", err
+	// A token-only check deliberately supplies neither a password nor a Guard
+	// code. DepotDownloader must then use its remembered refresh token.
+	var code string
+	if sharedSecret != "" {
+		code, err = GenerateSteamGuardCode(sharedSecret, time.Now())
+		if err != nil {
+			return "", "", "", err
+		}
 	}
 
 	args := []string{
@@ -151,13 +156,15 @@ func runDepotDownloader(ddPath, depotID, branch, outDir, filelist, username, pas
 }
 
 func envWithHome(home string) []string {
-	out := []string{"HOME=" + home}
+	// .NET isolated storage uses XDG_DATA_HOME on Linux when it is set;
+	// overriding HOME alone does not isolate the remembered login in that case.
+	out := []string{"HOME=" + home, "XDG_DATA_HOME=" + filepath.Join(home, ".local", "share")}
 	if runtime.GOOS == "windows" {
 		out = append(out, "USERPROFILE="+home)
 	}
 	for _, e := range os.Environ() {
 		switch {
-		case strings.HasPrefix(e, "HOME="), strings.HasPrefix(e, "USERPROFILE="):
+		case strings.HasPrefix(e, "HOME="), strings.HasPrefix(e, "USERPROFILE="), strings.HasPrefix(e, "XDG_DATA_HOME="):
 			continue
 		default:
 			out = append(out, e)

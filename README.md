@@ -60,6 +60,8 @@ go run ./cmd/vrc-api2wiki
 | `STEAM_PASSWORD` | Yes for steam depots | Password |
 | `STEAM_SHARED_SECRET` | Yes for steam depots | Mobile authenticator `shared_secret` (base64); used to generate Steam Guard codes |
 
+In GitHub Actions, the existing `STEAM_SHARED_SECRET` also encrypts the saved Steam session, which is reused between runs. Clear the Steam session caches if this secret changes.
+
 ## Offline mode
 
 When wiki credentials are omitted, the tool never logs in and never writes to the wiki:
