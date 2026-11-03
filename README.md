@@ -60,6 +60,35 @@ go run ./cmd/vrc-api2wiki
 | `STEAM_PASSWORD` | Yes for steam depots | Password |
 | `STEAM_SHARED_SECRET` | Yes for steam depots | Mobile authenticator `shared_secret` (base64); used to generate Steam Guard codes |
 
+### Steam login reuse in CI
+
+DepotDownloader uses `-remember-password` to reuse its Steam refresh token. Its
+isolated storage lives under `.steam-session/`; both `HOME` and Linux
+`XDG_DATA_HOME` are redirected there so runner settings cannot move tokens outside
+the saved directory. Each invocation still connects to Steam, but a valid saved
+token avoids password authentication and another Steam Guard code.
+
+The hourly `sync` workflow restores the latest encrypted Steam session and saves
+the updated session under a unique run/attempt key, including after a later sync
+failure. A fixed cache key cannot be updated and previously kept restoring the
+27 July 2026 session. The new `v2` cache starts with one password/Guard login;
+expired or revoked tokens also require reauthentication, with one automatic retry.
+
+Only `.steam-session.tar.gpg` is cached. GPG encrypts and integrity-protects it
+using the existing random `STEAM_SHARED_SECRET`; no additional secret is needed.
+The plaintext directory must never be uploaded as a cache or artifact, since this
+repository is public. If the authenticator secret changes, clear the encrypted
+Steam caches before the next run. Remove the old plaintext
+`vrchat-api2wiki-steam-session-v1` cache after this workflow is deployed.
+
+To verify on real GitHub runners without wiki writes, manually dispatch `sync`
+with `steam_session_check=true`. Dispatch it again on the same branch with both
+`steam_session_check=true` and `require_steam_session_reuse=true`. The second run
+receives only the cached session and supplies DepotDownloader neither a password
+nor a Guard code; it must succeed on its remembered token. The normal hourly sync
+does not need either input. Offline encryption/restore and failure checks run in
+the `test` workflow on pushes and pull requests.
+
 ## Offline mode
 
 When wiki credentials are omitted, the tool never logs in and never writes to the wiki:

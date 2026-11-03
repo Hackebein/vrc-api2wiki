@@ -5,6 +5,7 @@ steam-output/
 .api-cache/
 .vrchat-session/
 .steam-session/
+.steam-session.tar.gpg
 third_party/DepotDownloader/DepotDownloader
 third_party/DepotDownloader/DepotDownloader.exe
 third_party/DepotDownloader/account.config

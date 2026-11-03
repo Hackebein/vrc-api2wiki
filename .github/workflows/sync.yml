@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: '0 * * * *'
   workflow_dispatch:
+    inputs:
+      steam_session_check:
+        description: Check Steam authentication only, without syncing the wiki
+        type: boolean
+        default: false
+      require_steam_session_reuse:
+        description: Fail the Steam check unless the cached login works without password or Guard code
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -28,24 +37,36 @@ jobs:
         run: bash scripts/fetch-depotdownloader.sh
 
       - name: Build
-        run: go build -o /dev/null ./...
+        run: go build ./...
 
       - name: Test
         run: go test ./...
 
       - name: Restore VRChat session cache
+        if: inputs.steam_session_check != true
         uses: actions/cache@v4
         with:
           path: .vrchat-session/cookies.jar
           key: vrchat-api2wiki-session-v1
 
       - name: Restore Steam session cache
-        uses: actions/cache@v4
+        id: steam-cache
+        uses: actions/cache/restore@v4
         with:
-          path: .steam-session
-          key: vrchat-api2wiki-steam-session-v1
+          # Cache ciphertext only: this repository is public.
+          path: .steam-session.tar.gpg
+          key: ${{ runner.os }}-vrchat-api2wiki-steam-session-v2-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ runner.os }}-vrchat-api2wiki-steam-session-v2-
+
+      - name: Decrypt Steam session
+        id: steam-restore
+        env:
+          STEAM_SHARED_SECRET: ${{ secrets.STEAM_SHARED_SECRET }}
+        run: bash scripts/steam-session-cache.sh restore
 
       - name: Restore image cache
+        if: inputs.steam_session_check != true
         uses: actions/cache@v4
         with:
           path: .image-cache
@@ -54,6 +75,7 @@ jobs:
             vrchat-api2wiki-images-v1-
 
       - name: Restore API snapshot cache
+        if: inputs.steam_session_check != true
         uses: actions/cache@v4
         with:
           path: .api-cache
@@ -62,6 +84,7 @@ jobs:
             vrchat-api2wiki-api-v1-
 
       - name: Run sync
+        if: inputs.steam_session_check != true
         env:
           VRCWIKI_API_URL: ${{ secrets.VRCWIKI_API_URL }}
           VRCWIKI_USERNAME: ${{ secrets.VRCWIKI_USERNAME }}
@@ -75,3 +98,28 @@ jobs:
           STEAM_PASSWORD: ${{ secrets.STEAM_PASSWORD }}
           STEAM_SHARED_SECRET: ${{ secrets.STEAM_SHARED_SECRET }}
         run: go run ./cmd/vrc-api2wiki
+
+      - name: Check Steam session
+        if: inputs.steam_session_check == true
+        timeout-minutes: 5
+        env:
+          STEAM_USERNAME: ${{ secrets.STEAM_USERNAME }}
+          STEAM_PASSWORD: ${{ secrets.STEAM_PASSWORD }}
+          STEAM_SHARED_SECRET: ${{ secrets.STEAM_SHARED_SECRET }}
+          REQUIRE_STEAM_SESSION_REUSE: ${{ inputs.require_steam_session_reuse }}
+        run: go run ./cmd/check-steam-session
+
+      # Preserve a refreshed login even if a later part of the wiki sync failed.
+      - name: Encrypt Steam session
+        id: steam-save
+        if: ${{ !cancelled() && steps.steam-restore.outcome == 'success' }}
+        env:
+          STEAM_SHARED_SECRET: ${{ secrets.STEAM_SHARED_SECRET }}
+        run: bash scripts/steam-session-cache.sh save
+
+      - name: Save Steam session cache
+        if: ${{ !cancelled() && steps.steam-save.outcome == 'success' && hashFiles('.steam-session.tar.gpg') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .steam-session.tar.gpg
+          key: ${{ steps.steam-cache.outputs.cache-primary-key }}
