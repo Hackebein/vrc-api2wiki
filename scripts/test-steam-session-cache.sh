@@ -45,7 +45,9 @@ if STEAM_SHARED_SECRET=wrong-key bash "${TEST_DIR}/wrong-key/scripts/steam-sessi
 fi
 test ! -e "${TEST_DIR}/wrong-key/.steam-session"
 
-printf 'corrupt ciphertext' >"${TEST_DIR}/corrupt/.steam-session.tar.gpg"
+# Truncate a real encrypted message so GPG must detect failed integrity,
+# rather than merely reject a file that was never a GPG message.
+head -c -8 "${FIRST}/.steam-session.tar.gpg" >"${TEST_DIR}/corrupt/.steam-session.tar.gpg"
 if bash "${TEST_DIR}/corrupt/scripts/steam-session-cache.sh" restore; then
   echo 'Restored a corrupt archive' >&2
   exit 1
