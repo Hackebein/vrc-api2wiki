@@ -1,62 +1,73 @@
 # VRC-API2WIKI
 
-A Go service that updates [VRChat Wiki](https://wiki.vrchat.com) with worlds,
-marketplace listings, client builds, and creator tool versions.
+A Go service that keeps [VRChat Wiki](https://wiki.vrchat.com) in sync with live VRChat API data:
 
-## Run locally
+1. **Worlds** — populate `Template:World/<id>/…` data pages for infoboxes. `publicationDate` is written only when that subpage is missing, then left for wiki editors.
+2. **Marketplace** — store shelves and paid avatars as `{{InventoryContentDisplay}}` pages plus listing images
+3. **Client builds** — Steam depots via shipped [DepotDownloader](https://github.com/SteamRE/DepotDownloader), plus Meta Quest, Pico Store, Google Play, and Viveport listing version metadata
+4. **Creator tools** — VRChat Creator Companion (stable + beta) and VRC Quick Launcher versions for `Template:ClientBuild/…`
 
-Requires Go 1.26.1 or newer, Bash, `curl`, and `unzip`.
+## Quick start
 
 ```bash
 git clone https://github.com/Hackebein/vrc-api2wiki.git
 cd vrc-api2wiki
 bash scripts/fetch-depotdownloader.sh
-```
 
-Export the credentials you need from the table below, for example:
+# Local / offline wiki writes (recommended while testing):
+unset VRCWIKI_USERNAME VRCWIKI_PASSWORD
 
-```bash
-export VRCHAT_USERNAME='your-username'
-export VRCHAT_PASSWORD='your-password'
-export VRCHAT_TOTP_SECRET='your-base32-secret'
+export VRCHAT_USERNAME='…'
+export VRCHAT_PASSWORD='…'
+export VRCHAT_TOTP_SECRET='…'   # base32
+
+export STEAM_USERNAME='…'
+export STEAM_PASSWORD='…'
+export STEAM_SHARED_SECRET='…'  # base64
+
 go run ./cmd/vrc-api2wiki
 ```
 
-When both wiki credentials are unset, edits and uploads are saved to `./wiki-output/`
-instead of published. The service still reads from the live APIs. To publish,
-also export `VRCWIKI_USERNAME` and `VRCWIKI_PASSWORD`.
+## Configuration
 
-## Credentials
+### Wiki
 
-| Variable | Needed for | Value |
-|----------|------------|-------|
-| `VRCWIKI_USERNAME` | Publishing to the wiki | Wiki bot username |
-| `VRCWIKI_PASSWORD` | Publishing to the wiki | Wiki account password |
-| `VRCHAT_USERNAME` | Marketplace sync | VRChat email or username |
-| `VRCHAT_PASSWORD` | Marketplace sync | VRChat password |
-| `VRCHAT_TOTP_SECRET` | Marketplace sync | Raw base32 authenticator secret, not an `otpauth` URI |
-| `STEAM_USERNAME` | Steam client builds | Steam account with access to VRChat |
-| `STEAM_PASSWORD` | Steam client builds | Steam password |
-| `STEAM_SHARED_SECRET` | Steam client builds | Base64 mobile authenticator `shared_secret` |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `VRCWIKI_API_URL` | No | `https://wiki.vrchat.com/api.php` | MediaWiki API endpoint |
+| `VRCWIKI_USERNAME` | Yes* | — | Wiki bot username |
+| `VRCWIKI_PASSWORD` | Yes* | — | Wiki account password |
+| `VRCWIKI_AUTHORIZATION_HEADER` | No | — | Extra HTTP header name (Cloudflare bypass) |
+| `VRCWIKI_AUTHORIZATION_VALUE` | No | — | Extra HTTP header value |
+| `VRC_API2WIKI_WORLD_IDS` | No | — | Comma-separated world IDs; skips discovery |
+| `VRC_API2WIKI_LIMIT` | No | all | Cap worlds **and** paid marketplace avatars to the first *n* each |
 
-Optional environment variables:
+\* Omitting both username and password enables [offline mode](#offline-mode).
 
-| Variable | Purpose |
-|----------|---------|
-| `VRCWIKI_API_URL` | Override the default `https://wiki.vrchat.com/api.php` endpoint |
-| `VRCWIKI_AUTHORIZATION_HEADER` / `VRCWIKI_AUTHORIZATION_VALUE` | Add an HTTP header if the wiki requires one |
-| `VRC_API2WIKI_WORLD_IDS` | Sync only these comma-separated world IDs |
-| `VRC_API2WIKI_LIMIT` | Limit the number of worlds and paid marketplace avatars synced |
+### VRChat marketplace
 
-## GitHub Actions
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VRCHAT_USERNAME` | Yes for marketplace | Account email/username |
+| `VRCHAT_PASSWORD` | Yes for marketplace | Password |
+| `VRCHAT_TOTP_SECRET` | Yes for marketplace | Raw base32 TOTP secret (not an otpauth URI) |
 
-Add the credentials above as repository Actions secrets. Add the optional wiki
-endpoint or HTTP header as secrets too, if needed. Enable the **sync** workflow;
-it runs hourly and can also be started manually without changing any inputs.
+### Client builds (Steam / Quest / Pico / Google Play / Viveport)
 
-Steam sessions are encrypted and reused automatically. The first run, or an
-expired or revoked session, may need a new authenticator login. If you change
-`STEAM_SHARED_SECRET`, clear the Steam session caches before running again.
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `STEAM_USERNAME` | Yes for steam depots | Steam account that owns VRChat |
+| `STEAM_PASSWORD` | Yes for steam depots | Password |
+| `STEAM_SHARED_SECRET` | Yes for steam depots | Mobile authenticator `shared_secret` (base64); used to generate Steam Guard codes |
+
+In GitHub Actions, the existing `STEAM_SHARED_SECRET` also encrypts the saved Steam session, which is reused between runs. Clear the Steam session caches if this secret changes.
+
+## Offline mode
+
+When wiki credentials are omitted, the tool never logs in and never writes to the wiki:
+
+- **Reads** — Discovery and existing page checks still hit the live wiki API when needed for worlds.
+- **Writes** — Page edits and image uploads go to `./wiki-output/` instead.
 
 ## License
 
