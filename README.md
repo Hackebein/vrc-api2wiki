@@ -62,6 +62,14 @@ go run ./cmd/vrc-api2wiki
 
 In GitHub Actions, the existing `STEAM_SHARED_SECRET` also encrypts the saved Steam session, which is reused between runs. Clear the Steam session caches if this secret changes.
 
+### Creator tools
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VRC_API2WIKI_GITHUB_TOKEN` | No | Read-only GitHub token for the Quick Launcher release lookup |
+
+The sync workflow uses its built-in GitHub token with `contents: read`. Local runs use GitHub's anonymous quota when the variable is unset or blank.
+
 ## Offline mode
 
 When wiki credentials are omitted, the tool never logs in and never writes to the wiki:

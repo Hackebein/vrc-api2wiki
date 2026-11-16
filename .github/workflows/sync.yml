@@ -86,6 +86,7 @@ jobs:
       - name: Run sync
         if: inputs.steam_session_check != true
         env:
+          VRC_API2WIKI_GITHUB_TOKEN: ${{ github.token }}
           VRCWIKI_API_URL: ${{ secrets.VRCWIKI_API_URL }}
           VRCWIKI_USERNAME: ${{ secrets.VRCWIKI_USERNAME }}
           VRCWIKI_PASSWORD: ${{ secrets.VRCWIKI_PASSWORD }}
