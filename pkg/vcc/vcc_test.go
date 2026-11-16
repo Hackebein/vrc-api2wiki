@@ -4,8 +4,10 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -141,9 +143,13 @@ func TestQuickLauncherVersionFromZip(t *testing.T) {
 }
 
 func TestFetchCreatorCompanion(t *testing.T) {
+	t.Setenv(githubTokenEnv, "test-token")
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Host != "vcc.docs.vrchat.com" {
 			t.Fatalf("host %s", req.URL.Host)
+		}
+		if req.Header.Get("Authorization") != "" {
+			t.Fatal("VCC docs request carried an Authorization header")
 		}
 		body := `<a href="/news/release-2.5.0">Release 2.5.0-beta.2</a><a href="/news/release-2.4.5">Release 2.4.5</a>`
 		return &http.Response{
@@ -215,41 +221,87 @@ func TestFetchQuickLauncher(t *testing.T) {
 	}
 	zipBytes := zipBuf.Bytes()
 
+	const tag = "2.5.0-beta.2"
+	const redirectedZipURL = "https://release-assets.githubusercontent.com/quick-launcher.zip"
+	zipURL := fmt.Sprintf(portableZipURL, tag, tag)
+	for _, tt := range []struct {
+		name          string
+		token         string
+		authorization string
+	}{
+		{name: "unset token"},
+		{name: "configured token", token: " test-token ", authorization: "Bearer test-token"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(githubTokenEnv, tt.token)
+			if tt.token == "" {
+				if err := os.Unsetenv(githubTokenEnv); err != nil {
+					t.Fatal(err)
+				}
+			}
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				authorization := req.Header.Get("Authorization")
+				switch url := req.URL.String(); url {
+				case githubReleasesURL:
+					if authorization != tt.authorization {
+						t.Fatal("unexpected Authorization header on release lookup")
+					}
+					if req.Header.Get("Accept") != "application/vnd.github+json" {
+						t.Fatalf("Accept %q", req.Header.Get("Accept"))
+					}
+					body := `[{"tag_name":"2.5.0-beta.2","prerelease":false,"assets":[]}]`
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(body)),
+					}, nil
+				case zipURL, redirectedZipURL:
+					if authorization != "" {
+						t.Fatal("portable ZIP request carried an Authorization header")
+					}
+					if url == zipURL {
+						return &http.Response{
+							StatusCode: http.StatusFound,
+							Header:     http.Header{"Location": {redirectedZipURL}},
+							Body:       http.NoBody,
+						}, nil
+					}
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(bytes.NewReader(zipBytes)),
+					}, nil
+				default:
+					t.Fatalf("unexpected URL %s", req.URL)
+					return nil, nil
+				}
+			})}
+			cb, err := FetchQuickLauncher(client)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cb.Version != "1.6.2" || cb.Branch != QuickLauncherClientName {
+				t.Fatalf("%+v", cb)
+			}
+			if cb.RawMatch != tag {
+				t.Fatalf("rawMatch %q", cb.RawMatch)
+			}
+		})
+	}
+}
+
+func TestFetchQuickLauncherRejectsAuthenticatedRedirect(t *testing.T) {
+	t.Setenv(githubTokenEnv, "test-token")
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		switch {
-		case strings.Contains(req.URL.Host, "api.github.com"):
-			if req.Header.Get("Authorization") != "" {
-				t.Fatal("Authorization must not be sent to GitHub API")
-			}
-			if req.Header.Get("Accept") != "application/vnd.github+json" {
-				t.Fatalf("Accept %q", req.Header.Get("Accept"))
-			}
-			body := `[{"tag_name":"2.5.0-beta.2","prerelease":false,"assets":[]}]`
-			return &http.Response{
-				StatusCode: 200,
-				Body:       io.NopCloser(strings.NewReader(body)),
-				Header:     make(http.Header),
-			}, nil
-		case strings.Contains(req.URL.Path, "Release_Portable.zip"):
-			return &http.Response{
-				StatusCode: 200,
-				Body:       io.NopCloser(bytes.NewReader(zipBytes)),
-				Header:     make(http.Header),
-			}, nil
-		default:
-			t.Fatalf("unexpected URL %s", req.URL)
-			return nil, nil
+		if req.URL.String() != githubReleasesURL {
+			t.Fatalf("followed release-list redirect to %s", req.URL)
 		}
+		return &http.Response{
+			StatusCode: http.StatusFound,
+			Header:     http.Header{"Location": {"https://api.github.com/"}},
+			Body:       http.NoBody,
+		}, nil
 	})}
-	cb, err := FetchQuickLauncher(client)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cb.Version != "1.6.2" || cb.Branch != QuickLauncherClientName {
-		t.Fatalf("%+v", cb)
-	}
-	if cb.RawMatch != "2.5.0-beta.2" {
-		t.Fatalf("rawMatch %q", cb.RawMatch)
+	if _, err := FetchQuickLauncher(client); err == nil || !strings.Contains(err.Error(), "HTTP 302") {
+		t.Fatalf("expected HTTP 302 error, got %v", err)
 	}
 }
 

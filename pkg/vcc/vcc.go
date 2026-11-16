@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ const (
 
 	newsURL              = "https://vcc.docs.vrchat.com/news/"
 	githubReleasesURL    = "https://api.github.com/repos/vrchat-community/creator-companion/releases?per_page=20"
+	githubTokenEnv       = "VRC_API2WIKI_GITHUB_TOKEN"
 	portableZipName      = "web_vcc_%s_Release_Portable.zip"
 	portableZipURL       = "https://github.com/vrchat-community/creator-companion/releases/download/%s/" + portableZipName
 	quickLauncherZipPath = "Tools/VRC Quick Launcher/VRC Quick Launcher.exe"
@@ -34,7 +36,7 @@ var (
 )
 
 func FetchCreatorCompanion(httpClient *http.Client) (*steam.ClientBuild, error) {
-	body, err := getBytes(httpClient, newsURL, 60*time.Second)
+	body, err := getBytes(httpClient, newsURL, 60*time.Second, "")
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +48,7 @@ func FetchCreatorCompanion(httpClient *http.Client) (*steam.ClientBuild, error) 
 }
 
 func FetchCreatorCompanionBeta(httpClient *http.Client) (*steam.ClientBuild, error) {
-	body, err := getBytes(httpClient, newsURL, 60*time.Second)
+	body, err := getBytes(httpClient, newsURL, 60*time.Second, "")
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +60,8 @@ func FetchCreatorCompanionBeta(httpClient *http.Client) (*steam.ClientBuild, err
 }
 
 func FetchQuickLauncher(httpClient *http.Client) (*steam.ClientBuild, error) {
-	body, err := getBytes(httpClient, githubReleasesURL, 60*time.Second)
+	token := strings.TrimSpace(os.Getenv(githubTokenEnv))
+	body, err := getBytes(httpClient, githubReleasesURL, 60*time.Second, token)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +72,7 @@ func FetchQuickLauncher(httpClient *http.Client) (*steam.ClientBuild, error) {
 	if zipURL == "" {
 		zipURL = fmt.Sprintf(portableZipURL, tag, tag)
 	}
-	zipBody, err := getBytes(httpClient, zipURL, 10*time.Minute)
+	zipBody, err := getBytes(httpClient, zipURL, 10*time.Minute, "")
 	if err != nil {
 		return nil, fmt.Errorf("creator companion portable zip: %w", err)
 	}
@@ -190,26 +193,32 @@ func isPrereleaseVersion(v string) bool {
 		strings.Contains(lower, "preview")
 }
 
-func getBytes(httpClient *http.Client, url string, timeout time.Duration) ([]byte, error) {
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: timeout}
-	} else if httpClient.Timeout == 0 || httpClient.Timeout < timeout {
-		// Copy client so callers with a short default timeout still allow large downloads.
-		cloned := *httpClient
-		cloned.Timeout = timeout
-		httpClient = &cloned
+func getBytes(httpClient *http.Client, url string, timeout time.Duration, releaseToken string) ([]byte, error) {
+	// Copy the client so the timeout and redirect policy apply only to this request.
+	var client http.Client
+	if httpClient != nil {
+		client = *httpClient
+	}
+	if client.Timeout < timeout {
+		client.Timeout = timeout
 	}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", userAgent)
-	if strings.Contains(url, "api.github.com") {
+	if req.URL.Hostname() == "api.github.com" {
 		req.Header.Set("Accept", "application/vnd.github+json")
 	} else {
 		req.Header.Set("Accept", "application/json, text/html, */*")
 	}
-	resp, err := httpClient.Do(req)
+	if url == githubReleasesURL && releaseToken != "" {
+		req.Header.Set("Authorization", "Bearer "+releaseToken)
+		client.CheckRedirect = func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
