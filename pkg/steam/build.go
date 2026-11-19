@@ -135,11 +135,3 @@ func WriteBuildJSON(path string, build *ClientBuild) error {
 	}
 	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
-
-func ClientBuildPages(b *ClientBuild) map[string]string {
-	return map[string]string{
-		"version":     b.Version,
-		"buildNumber": b.BuildNumber,
-		"buildHash":   b.BuildHash,
-	}
-}

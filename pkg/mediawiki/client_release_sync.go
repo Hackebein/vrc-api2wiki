@@ -2,10 +2,8 @@ package mediawiki
 
 import (
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"time"
 
 	"github.com/Hackebein/vrc-api2wiki/pkg/steam"
@@ -42,7 +40,7 @@ func syncIOSRelease(wiki *MediaWikiClient, root string, client *http.Client, log
 	if release.BuildNumber == "" && logger != nil {
 		logger.Warn("iOS store version has no matching published build number", "version", listing.Version)
 	}
-	return writeClientRelease(wiki, root, release, logger)
+	return publishClientBuild(wiki, root, release, logger)
 }
 
 func syncLiveMainRelease(wiki *MediaWikiClient, root string, client *http.Client, logger *slog.Logger) error {
@@ -53,39 +51,9 @@ func syncLiveMainRelease(wiki *MediaWikiClient, root string, client *http.Client
 		}
 		return nil
 	}
-	return writeClientRelease(wiki, root, &steam.ClientBuild{
+	return publishClientBuild(wiki, root, &steam.ClientBuild{
 		Version: notes.Version, BuildNumber: notes.BuildNumber, ReleaseDate: notes.ReleaseDate,
 		ReleaseNotesURL: notes.URL, SourceURL: vrchat.LatestLiveReleaseURL,
 		Branch: mainReleaseName, FetchedAt: time.Now().UTC(),
 	}, logger)
-}
-
-// Publish each release as one template revision so a failed edit cannot
-// leave readers with a date or build number for a different version.
-func writeClientRelease(wiki *MediaWikiClient, root string, release *steam.ClientBuild, logger *slog.Logger) error {
-	if err := steam.WriteBuildJSON(filepath.Join(root, "steam-output", release.Branch+".json"), release); err != nil {
-		return err
-	}
-	display := release.Version
-	if release.BuildNumber != "" {
-		display += " (" + release.BuildNumber + ")"
-	}
-	text := fmt.Sprintf(`{{#switch:{{{1|display}}}
- |version = %s
- |buildNumber = %s
- |releaseNotes = %s
- |releaseDate = %s
- |display = %s
- |#default =
-}}`, release.Version, release.BuildNumber, release.ReleaseNotesURL, release.ReleaseDate, display)
-	title := ClientBuildPageTitle(release.Branch, "")
-	if err := wiki.EditPage(title, text, true); err != nil {
-		return fmt.Errorf("edit %s: %w", title, err)
-	}
-	if logger != nil {
-		logger.Info("client release written", "client", release.Branch, "version", release.Version,
-			"buildNumber", release.BuildNumber, "releaseDate", release.ReleaseDate,
-			"source", release.SourceURL, "releaseNotes", release.ReleaseNotesURL)
-	}
-	return nil
 }
