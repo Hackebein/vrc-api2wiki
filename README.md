@@ -4,7 +4,7 @@ A Go service that keeps [VRChat Wiki](https://wiki.vrchat.com) in sync with live
 
 1. **Worlds** — populate `Template:World/<id>/…` data pages for infoboxes. `publicationDate` is written only when that subpage is missing, then left for wiki editors.
 2. **Marketplace** — store shelves and paid avatars as `{{InventoryContentDisplay}}` pages plus listing images
-3. **Client builds** — Steam depots via shipped [DepotDownloader](https://github.com/SteamRE/DepotDownloader), plus Meta Quest, Pico Store, Google Play, Viveport and the Apple App Store. The main release comes from VRChat's published release notes.
+3. **Client builds** — Steam depots via shipped [DepotDownloader](https://github.com/SteamRE/DepotDownloader), plus Meta Quest, Pico Store, Google Play, Viveport, and iOS listing version metadata
 4. **Creator tools** — VRChat Creator Companion (stable + beta) and VRC Quick Launcher versions for `Template:ClientBuild/…`
 
 ## Quick start
@@ -61,17 +61,6 @@ go run ./cmd/vrc-api2wiki
 | `STEAM_SHARED_SECRET` | Yes for steam depots | Mobile authenticator `shared_secret` (base64); used to generate Steam Guard codes |
 
 In GitHub Actions, the existing `STEAM_SHARED_SECRET` also encrypts the saved Steam session, which is reused between runs. Clear the Steam session caches if this secret changes.
-
-| Wiki data template | Source and usage |
-|----------|-------------|
-| `{{ClientBuild/ios-app-store\|version}}` | Newest version from the US and German Apple listings for app 6448578770. Both listings must be available. |
-| `{{ClientBuild/ios-app-store\|buildNumber}}` | VRChat build number from release notes for that exact store version. Empty when VRChat has no matching published build number. |
-| `{{ClientBuild/ios-app-store\|releaseNotes}}` | Matching VRChat release notes, or the listing URL if there are no matching notes. Apple's public lookup provides the store version. Apple's internal bundle build number is unavailable from this lookup. |
-| `{{ClientBuild/live-mainpage\|version}}` | Original live release from [VRChat's latest release link](https://docs.vrchat.com/docs/latest-release). A patch link resolves to the original release in that family. |
-| `{{ClientBuild/live-mainpage\|buildNumber}}`, `\|releaseDate`, `\|releaseNotes` | Original release build, ISO date and link from those same notes. The bot writes all fields in one template revision. |
-| `{{ClientBuild/windows/unityVersion}}`, `{{ClientBuild/open-beta-windows/unityVersion}}` | Unity engine version from the `VRChat_Data/globalgamemanagers` header in each Windows Steam depot (app 438100, depot 438101). |
-
-The sync records the parsed values in `steam-output/*.json`. To verify a deployment, check the sync log and read back the four generated Wiki pages above before updating the Wiki's `Version` family and main-page card. Wiki presentation changes are made on the Wiki. Its Git mirror imports edits from the site.
 
 ### Creator tools
 

@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	iosClientName   = "ios-app-store"
+	iosClientName   = "ios"
 	mainReleaseName = "live-mainpage"
 )
 
