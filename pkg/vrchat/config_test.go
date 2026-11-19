@@ -32,11 +32,11 @@ func TestClientConfigPlatform(t *testing.T) {
 }
 
 func TestClearClientBuildIfBelowMin(t *testing.T) {
-	b := &steam.ClientBuild{Version: "2026.2.3", BuildNumber: "1862", BuildHash: "abc"}
+	b := &steam.ClientBuild{Version: "2026.2.3", BuildNumber: "1862", BuildHash: "abc", UnityVersion: "2022.3.22f1"}
 	if !ClearClientBuildIfBelowMin(b, 1865) {
 		t.Fatal("expected clear")
 	}
-	if b.Version != "" || b.BuildNumber != "" || b.BuildHash != "" {
+	if b.Version != "" || b.BuildNumber != "" || b.BuildHash != "" || b.UnityVersion != "" {
 		t.Fatalf("not cleared: %+v", b)
 	}
 

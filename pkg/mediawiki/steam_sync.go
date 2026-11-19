@@ -18,13 +18,6 @@ import (
 	"github.com/Hackebein/vrc-api2wiki/pkg/vrchat"
 )
 
-func ClientBuildPageTitle(name, subpath string) string {
-	if subpath == "" {
-		return "Template:ClientBuild/" + name
-	}
-	return "Template:ClientBuild/" + name + "/" + subpath
-}
-
 func RunSteamSync(wiki *MediaWikiClient, logger *slog.Logger) error {
 	root, err := steam.FindRepoRoot()
 	if err != nil {
@@ -32,6 +25,13 @@ func RunSteamSync(wiki *MediaWikiClient, logger *slog.Logger) error {
 	}
 
 	httpClient := &http.Client{Timeout: 60 * time.Second}
+	if err := syncIOSRelease(wiki, root, httpClient, logger); err != nil {
+		return err
+	}
+	if err := syncLiveMainRelease(wiki, root, httpClient, logger); err != nil {
+		return err
+	}
+
 	vrc := vrchat.NewClient(httpClient)
 	mins, sdkUnity, err := vrc.GetClientBuildConfig()
 	if err != nil {
@@ -82,7 +82,7 @@ func RunSteamSync(wiki *MediaWikiClient, logger *slog.Logger) error {
 					return steam.DownloadBranch(dd, client.SteamBranch, outDir, username, password, shared)
 				},
 				func(outDir string) (*steam.ClientBuild, error) {
-					return steam.ExtractBuildFromDir(outDir, client.ClientName)
+					return extractWindowsBuild(outDir, client.ClientName, logger)
 				},
 			); err != nil {
 				return err
@@ -146,30 +146,11 @@ func syncCreatorCompanionTools(wiki *MediaWikiClient, root string, logger *slog.
 }
 
 func writeToolVersion(wiki *MediaWikiClient, root, name, version string, logger *slog.Logger) error {
-	build := &steam.ClientBuild{
+	return publishClientBuild(wiki, root, &steam.ClientBuild{
 		Version:   version,
 		Branch:    name,
 		FetchedAt: time.Now().UTC(),
-	}
-	jsonPath := filepath.Join(root, "steam-output", name+".json")
-	if err := steam.WriteBuildJSON(jsonPath, build); err != nil {
-		return err
-	}
-	versionTitle := ClientBuildPageTitle(name, "version")
-	if err := wiki.EditPage(versionTitle, version, true); err != nil {
-		return fmt.Errorf("edit %s: %w", versionTitle, err)
-	}
-	marker := fmt.Sprintf("{{ClientBuild/%s/version}}", name)
-	if err := wiki.EditPage(ClientBuildPageTitle(name, ""), marker, true); err != nil {
-		return fmt.Errorf("edit %s: %w", ClientBuildPageTitle(name, ""), err)
-	}
-	if logger != nil {
-		logger.Info("tool version written",
-			"client", name,
-			"version", version,
-			"json", jsonPath)
-	}
-	return nil
+	}, logger)
 }
 
 func syncMetaQuestAndroid(wiki *MediaWikiClient, root string, mins map[string]int, logger *slog.Logger) error {
@@ -279,6 +260,18 @@ func syncViveport(wiki *MediaWikiClient, root string, mins map[string]int, logge
 	return nil
 }
 
+func extractWindowsBuild(dir, name string, logger *slog.Logger) (*steam.ClientBuild, error) {
+	build, err := steam.ExtractBuildFromDir(dir, name)
+	if err != nil {
+		return nil, err
+	}
+	build.UnityVersion, err = steam.ExtractUnityVersionFromDir(dir)
+	if err != nil && logger != nil {
+		logger.Warn("Windows client Unity version unavailable", "client", name, "err", err)
+	}
+	return build, nil
+}
+
 func syncSteamClient(
 	wiki *MediaWikiClient,
 	root, name string,
@@ -325,32 +318,6 @@ func writeClientBuild(wiki *MediaWikiClient, root, name string, build *steam.Cli
 		}
 	}
 
-	jsonPath := filepath.Join(root, "steam-output", name+".json")
-	if err := steam.WriteBuildJSON(jsonPath, build); err != nil {
-		return err
-	}
-
-	pages := steam.ClientBuildPages(build)
-	for subpath, value := range pages {
-		title := ClientBuildPageTitle(name, subpath)
-		if err := wiki.EditPage(title, value, true); err != nil {
-			return fmt.Errorf("edit %s: %w", title, err)
-		}
-	}
-	marker := fmt.Sprintf("{{ClientBuild/%s/version}} ({{ClientBuild/%s/buildNumber}})", name, name)
-	if err := wiki.EditPage(ClientBuildPageTitle(name, ""), marker, true); err != nil {
-		return fmt.Errorf("edit %s: %w", ClientBuildPageTitle(name, ""), err)
-	}
-
-	if logger != nil {
-		logger.Info("client build written",
-			"client", name,
-			"version", build.Version,
-			"buildNumber", build.BuildNumber,
-			"buildHash", build.BuildHash,
-			"minBuildNumber", min,
-			"pages", len(pages),
-			"json", jsonPath)
-	}
-	return nil
+	build.Branch = name
+	return publishClientBuild(wiki, root, build, logger)
 }

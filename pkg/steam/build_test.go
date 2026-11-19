@@ -51,17 +51,3 @@ func TestExtractHighestBuildFromBytes(t *testing.T) {
 		t.Fatalf("branch %q", cb.Branch)
 	}
 }
-
-func TestClientBuildPages(t *testing.T) {
-	cb, err := ExtractBuildFromBytes([]byte("2026.2.3p3-1867-42912f4b5c-Release"), "windows")
-	if err != nil {
-		t.Fatal(err)
-	}
-	pages := ClientBuildPages(cb)
-	if len(pages) != 3 {
-		t.Fatalf("want 3 pages, got %v", pages)
-	}
-	if pages["version"] != "2026.2.3p3" || pages["buildNumber"] != "1867" || pages["buildHash"] != "42912f4b5c" {
-		t.Fatalf("%v", pages)
-	}
-}

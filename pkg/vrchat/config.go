@@ -15,7 +15,7 @@ const UnitySDKClientName = "unity-sdk"
 
 func ClientConfigPlatform(clientName string) string {
 	switch strings.TrimSpace(clientName) {
-	case "windows", "open-beta-windows":
+	case steam.WindowsClientName, steam.WindowsOpenBetaClientName:
 		return "PC"
 	case "android-quest", "open-beta-android-quest":
 		return "QuestStore"
@@ -139,5 +139,6 @@ func ClearClientBuildIfBelowMin(b *steam.ClientBuild, min int) bool {
 	b.Version = ""
 	b.BuildNumber = ""
 	b.BuildHash = ""
+	b.UnityVersion = ""
 	return true
 }
