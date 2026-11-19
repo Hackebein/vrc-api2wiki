@@ -12,14 +12,18 @@ import (
 )
 
 type ClientBuild struct {
-	Version      string    `json:"version"`
-	BuildNumber  string    `json:"buildNumber"`
-	BuildHash    string    `json:"buildHash"`
-	SteamBuildID string    `json:"steamBuildId,omitempty"`
-	ManifestID   string    `json:"manifestId,omitempty"`
-	Branch       string    `json:"branch"`
-	FetchedAt    time.Time `json:"fetchedAt"`
-	RawMatch     string    `json:"rawMatch,omitempty"`
+	Version         string    `json:"version"`
+	BuildNumber     string    `json:"buildNumber"`
+	BuildHash       string    `json:"buildHash"`
+	UnityVersion    string    `json:"unityVersion,omitempty"`
+	ReleaseDate     string    `json:"releaseDate,omitempty"`
+	ReleaseNotesURL string    `json:"releaseNotesUrl,omitempty"`
+	SourceURL       string    `json:"sourceUrl,omitempty"`
+	SteamBuildID    string    `json:"steamBuildId,omitempty"`
+	ManifestID      string    `json:"manifestId,omitempty"`
+	Branch          string    `json:"branch"`
+	FetchedAt       time.Time `json:"fetchedAt"`
+	RawMatch        string    `json:"rawMatch,omitempty"`
 }
 
 var buildPattern = regexp.MustCompile(`(\d{4}\.\d+\.\d+[a-zA-Z]?\d*)-(\d+)-([0-9a-fA-F]{7,40})(?:-(?:Release|OpenBeta|Beta))?`)

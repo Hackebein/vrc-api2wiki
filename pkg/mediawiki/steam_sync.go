@@ -32,6 +32,13 @@ func RunSteamSync(wiki *MediaWikiClient, logger *slog.Logger) error {
 	}
 
 	httpClient := &http.Client{Timeout: 60 * time.Second}
+	if err := syncIOSRelease(wiki, root, httpClient, logger); err != nil {
+		return err
+	}
+	if err := syncLiveMainRelease(wiki, root, httpClient, logger); err != nil {
+		return err
+	}
+
 	vrc := vrchat.NewClient(httpClient)
 	mins, sdkUnity, err := vrc.GetClientBuildConfig()
 	if err != nil {
@@ -82,7 +89,7 @@ func RunSteamSync(wiki *MediaWikiClient, logger *slog.Logger) error {
 					return steam.DownloadBranch(dd, client.SteamBranch, outDir, username, password, shared)
 				},
 				func(outDir string) (*steam.ClientBuild, error) {
-					return steam.ExtractBuildFromDir(outDir, client.ClientName)
+					return extractWindowsBuild(outDir, client.ClientName, logger)
 				},
 			); err != nil {
 				return err
@@ -279,6 +286,18 @@ func syncViveport(wiki *MediaWikiClient, root string, mins map[string]int, logge
 	return nil
 }
 
+func extractWindowsBuild(dir, name string, logger *slog.Logger) (*steam.ClientBuild, error) {
+	build, err := steam.ExtractBuildFromDir(dir, name)
+	if err != nil {
+		return nil, err
+	}
+	build.UnityVersion, err = steam.ExtractUnityVersionFromDir(dir)
+	if err != nil && logger != nil {
+		logger.Warn("Windows client Unity version unavailable", "client", name, "err", err)
+	}
+	return build, nil
+}
+
 func syncSteamClient(
 	wiki *MediaWikiClient,
 	root, name string,
@@ -331,6 +350,12 @@ func writeClientBuild(wiki *MediaWikiClient, root, name string, build *steam.Cli
 	}
 
 	pages := steam.ClientBuildPages(build)
+	if name == steam.WindowsClientName || name == steam.WindowsOpenBetaClientName {
+		pages["unityVersion"] = build.UnityVersion
+		if build.UnityVersion == "" {
+			pages["unityVersion"] = "<!-- Unity version unavailable for this build -->"
+		}
+	}
 	for subpath, value := range pages {
 		title := ClientBuildPageTitle(name, subpath)
 		if err := wiki.EditPage(title, value, true); err != nil {
@@ -348,6 +373,7 @@ func writeClientBuild(wiki *MediaWikiClient, root, name string, build *steam.Cli
 			"version", build.Version,
 			"buildNumber", build.BuildNumber,
 			"buildHash", build.BuildHash,
+			"unityVersion", build.UnityVersion,
 			"minBuildNumber", min,
 			"pages", len(pages),
 			"json", jsonPath)

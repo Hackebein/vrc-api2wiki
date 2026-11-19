@@ -13,9 +13,11 @@ import (
 )
 
 const (
-	VRChatAppID          = "438100"
-	VRChatWindowsDepotID = "438101"
-	VRChatAndroidDepotID = "438102"
+	VRChatAppID               = "438100"
+	VRChatWindowsDepotID      = "438101"
+	VRChatAndroidDepotID      = "438102"
+	WindowsClientName         = "windows"
+	WindowsOpenBetaClientName = "open-beta-windows"
 )
 
 type WindowsClient struct {
@@ -24,8 +26,8 @@ type WindowsClient struct {
 }
 
 var DefaultWindowsClients = []WindowsClient{
-	{SteamBranch: "public", ClientName: "windows"},
-	{SteamBranch: "open-beta", ClientName: "open-beta-windows"},
+	{SteamBranch: "public", ClientName: WindowsClientName},
+	{SteamBranch: "open-beta", ClientName: WindowsOpenBetaClientName},
 }
 
 const AndroidClientName = "android-steamos"
