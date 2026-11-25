@@ -11,6 +11,7 @@ var (
 	inventoryFieldRe = regexp.MustCompile(`(?m)^\s*\|([^=]+)=(.*)$`)
 	currentOfferRe   = regexp.MustCompile(`\{\{VRChatStoreListings/(\d+)/([^}]+)\}\}`)
 	shelfIconFileRe  = regexp.MustCompile(`\[\[File:(ShelfIcon [^|\]]+)`)
+	shelfHeaderRe    = regexp.MustCompile(`^<noinclude><span style="font-size:180%">(?:\[\[File:[^\r\n]+?\]\] )?([^\r\n]+)</span></noinclude>`)
 )
 
 type inventoryWikiCard struct {
@@ -261,6 +262,13 @@ func parseCurrentOfferShelves(wikitext string) []string {
 
 func parseShelfIconFromHeader(wikitext string) string {
 	if m := shelfIconFileRe.FindStringSubmatch(wikitext); len(m) == 2 {
+		return strings.TrimSpace(m[1])
+	}
+	return ""
+}
+
+func parseShelfTitleFromHeader(wikitext string) string {
+	if m := shelfHeaderRe.FindStringSubmatch(wikitext); len(m) == 2 {
 		return strings.TrimSpace(m[1])
 	}
 	return ""

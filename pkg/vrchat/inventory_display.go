@@ -30,6 +30,19 @@ func DisplayShelfTitle(raw string) string {
 	return strings.TrimSpace(minVersionShelfPrefix.ReplaceAllString(raw, ""))
 }
 
+func StoreShelfPathSegment(title string) string {
+	var b strings.Builder
+	for _, r := range DisplayShelfTitle(title) {
+		switch r {
+		case '{', '}', '[', ']', '|', '#', '<', '>', '"', '\'', ':', '\n', '\r', '\t':
+			b.WriteByte(' ')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
 func ListingImageFilename(displayName, ext string) string {
 	if ext == "" {
 		ext = "png"
@@ -449,7 +462,7 @@ func RenderCurrentOffersWikitext(year int, shelves []struct{ Title, IconFile str
 			b.WriteString("[[File:" + s.IconFile + "|frameless|middle|link=|30px]] ")
 		}
 		b.WriteString(title + "</span>\n")
-		b.WriteString(fmt.Sprintf("{{VRChatStoreListings/%d/%s}}\n\n", year, title))
+		b.WriteString(fmt.Sprintf("{{VRChatStoreListings/%d/%s}}\n\n", year, StoreShelfPathSegment(s.Title)))
 	}
 	b.WriteString("<noinclude>[[Category:Shop templates]]</noinclude>\n")
 	return b.String()
