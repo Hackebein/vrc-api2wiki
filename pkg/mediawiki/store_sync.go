@@ -12,7 +12,7 @@ import (
 )
 
 func StoreListingsPageTitle(year int, shelfTitle string) string {
-	return fmt.Sprintf("Template:VRChatStoreListings/%d/%s", year, storeShelfPathSegment(shelfTitle))
+	return fmt.Sprintf("Template:VRChatStoreListings/%d/%s", year, vrchat.StoreShelfPathSegment(shelfTitle))
 }
 
 func StoreCurrentOffersPageTitle() string {
@@ -20,7 +20,7 @@ func StoreCurrentOffersPageTitle() string {
 }
 
 func StoreAvatarStylePageTitle(year int, style string) string {
-	return fmt.Sprintf("Template:VRChatStoreListings/%d/Avatars/%s", year, storeShelfPathSegment(style))
+	return fmt.Sprintf("Template:VRChatStoreListings/%d/Avatars/%s", year, vrchat.StoreShelfPathSegment(style))
 }
 
 func StoreAvatarStylesIndexPageTitle(year int) string {
@@ -32,21 +32,7 @@ func StoreAvatarAuthorsIndexPageTitle(year int) string {
 }
 
 func StoreAvatarAuthorPageTitle(year int, author string) string {
-	return fmt.Sprintf("Template:VRChatStoreListings/%d/Avatars/Authors/%s", year, storeShelfPathSegment(author))
-}
-
-func storeShelfPathSegment(title string) string {
-	title = vrchat.DisplayShelfTitle(title)
-	var b strings.Builder
-	for _, r := range title {
-		switch r {
-		case '{', '}', '[', ']', '|', '#', '<', '>', '"', '\'', ':', '\n', '\r', '\t':
-			b.WriteByte(' ')
-		default:
-			b.WriteRune(r)
-		}
-	}
-	return strings.Join(strings.Fields(b.String()), " ")
+	return fmt.Sprintf("Template:VRChatStoreListings/%d/Avatars/Authors/%s", year, vrchat.StoreShelfPathSegment(author))
 }
 
 func ListingImageFileDescription(listingName, productID, sourceRef string) string {
@@ -161,7 +147,7 @@ func RunStoreSync(wiki *MediaWikiClient, api *vrchat.Client, logger *slog.Logger
 			}
 		}
 		wikiTitle := resolveWikiShelfTitle(apiTitle, listingIDs, wikiShelves)
-		pathTitle := storeShelfPathSegment(wikiTitle)
+		pathTitle := vrchat.StoreShelfPathSegment(wikiTitle)
 		if pathTitle == "" {
 			continue
 		}
@@ -370,7 +356,7 @@ func syncAvatarMarketplacePages(wiki *MediaWikiClient, api *vrchat.Client, avata
 		card := listing.Display
 		card.Image = filename
 		byStyle[listing.Style] = append(byStyle[listing.Style], card)
-		author := storeShelfPathSegment(listing.Author)
+		author := vrchat.StoreShelfPathSegment(listing.Author)
 		if author == "" {
 			author = "VRChat"
 		}
@@ -453,9 +439,13 @@ func loadWikiShelfIndex(wiki *MediaWikiClient, year int, logger *slog.Logger) []
 	}
 	var out []wikiShelfInfo
 	for _, title := range parseCurrentOfferShelves(offers) {
-		page, err := wiki.GetPageContent(StoreListingsPageTitle(year, title))
+		pageTitle := StoreListingsPageTitle(year, title)
+		page, err := wiki.GetPageContent(pageTitle)
 		if err != nil {
 			continue
+		}
+		if heading := parseShelfTitleFromHeader(page); heading != "" && StoreListingsPageTitle(year, heading) == pageTitle {
+			title = heading
 		}
 		out = append(out, wikiShelfInfo{
 			Title:      title,

@@ -1,6 +1,10 @@
 package mediawiki
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -15,6 +19,50 @@ func TestStoreListingsPageTitle(t *testing.T) {
 	}
 	if StoreListingsPageTitle(2026, "New Accessories") != "Template:VRChatStoreListings/2026/New Accessories" {
 		t.Fatal(StoreListingsPageTitle(2026, "New Accessories"))
+	}
+}
+
+func TestCurrentOffersLinksToPublishedShelfPages(t *testing.T) {
+	const year = 2026
+	shelves := []struct{ Title, IconFile string }{
+		{Title: "Winter's Blessing", IconFile: "ShelfIcon Winter's Blessing.png"},
+		{Title: "Magician's Bundle"},
+	}
+	offers := vrchat.RenderCurrentOffersWikitext(year, shelves)
+	pages := map[string]string{StoreCurrentOffersPageTitle(): offers}
+	for i, shelf := range shelves {
+		pageTitle := StoreListingsPageTitle(year, shelf.Title)
+		if !strings.Contains(offers, "{{"+strings.TrimPrefix(pageTitle, "Template:")+"}}") {
+			t.Errorf("current offers does not transclude %q", pageTitle)
+		}
+		if !strings.Contains(offers, shelf.Title+"</span>") {
+			t.Errorf("current offers does not display %q", shelf.Title)
+		}
+		cards := []vrchat.InventoryContentDisplay{{Name: shelf.Title, ProductID: fmt.Sprintf("prod_%d", i)}}
+		pages[pageTitle] = vrchat.RenderShelfWikitext(shelf.Title, shelf.IconFile, cards)
+	}
+	if t.Failed() {
+		return
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page, ok := pages[r.FormValue("titles")]
+		w.Header().Set("Content-Type", "application/json")
+		if !ok {
+			fmt.Fprint(w, `{"query":{"pages":{"-1":{"missing":""}}}}`)
+			return
+		}
+		content, _ := json.Marshal(page)
+		fmt.Fprintf(w, `{"query":{"pages":{"1":{"revisions":[{"slots":{"main":{"*":%s}}}]}}}}`, content)
+	}))
+	defer server.Close()
+	wiki := &MediaWikiClient{apiURL: server.URL, httpClient: server.Client()}
+	index := loadWikiShelfIndex(wiki, year, nil)
+	for i, shelf := range shelves {
+		// Matching by listing ID should retain the display title on a subsequent sync.
+		if got := resolveWikiShelfTitle("Renamed shelf", []string{fmt.Sprintf("prod_%d", i)}, index); got != shelf.Title {
+			t.Errorf("resolved shelf = %q, want %q", got, shelf.Title)
+		}
 	}
 }
 
